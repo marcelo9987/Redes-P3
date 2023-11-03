@@ -7,76 +7,76 @@ CC = gcc
 CFLAGS = -Wall -Wpedantic -g
 
 # Carpeta con las cabeceras
-HEADERS_DIR = server
+HEADERS_DIR = host
 
 # Opción de compilación que indica dónde están los archivos .h
 INCLUDES = -I$(HEADERS_DIR)
 
 # Archivos de cabecera para generar dependencias
-HEADERS = $(HEADERS_DIR)/server.h $(HEADERS_DIR)/client.h $(HEADERS_DIR)/getip.h $(HEADERS_DIR)/loging.h
+HEADERS = $(HEADERS_DIR)/host.h $(HEADERS_DIR)/getip.h $(HEADERS_DIR)/loging.h
 
 # Fuentes con las funcionalidades básicas de cliente y servidor (implementaciones de los .h)
 COMMON = $(HEADERS:.h=.c)
 
-# Servidor y cliente básicos
+# Emisor y receptor básicos
 BASIC = basic
 
-## Servidor básico
+## Emisor básico
 ### Fuentes
-SRC_BASIC_SERVER_SPECIFIC = $(BASIC)/servidor.c
-SRC_BASIC_SERVER = $(SRC_BASIC_SERVER_SPECIFIC) $(COMMON)
+SRC_BASIC_TRANSMITTER_SPECIFIC = $(BASIC)/emisor.c
+SRC_BASIC_TRANSMITTER = $(SRC_BASIC_TRANSMITTER_SPECIFIC) $(COMMON)
 
 ### Objetos
-OBJ_BASIC_SERVER = $(SRC_BASIC_SERVER:.c=.o)
+OBJ_BASIC_TRANSMITTER = $(SRC_BASIC_TRANSMITTER:.c=.o)
 
 ### Ejecutable o archivo de salida
-OUT_BASIC_SERVER = $(BASIC)/servidor
+OUT_BASIC_TRANSMITTER = $(BASIC)/emisor
 
-## Cliente básico
+## Receptor básico
 ### Fuentes
-SRC_BASIC_CLIENT_SPECIFIC = $(BASIC)/cliente.c
-SRC_BASIC_CLIENT = $(SRC_BASIC_CLIENT_SPECIFIC) $(COMMON)
+SRC_BASIC_RECEIVER_SPECIFIC = $(BASIC)/receptor.c
+SRC_BASIC_RECEIVER = $(SRC_BASIC_RECEIVER_SPECIFIC) $(COMMON)
 
 ### Objetos
-OBJ_BASIC_CLIENT = $(SRC_BASIC_CLIENT:.c=.o)
+OBJ_BASIC_RECEIVER = $(SRC_BASIC_RECEIVER:.c=.o)
 
 ### Ejecutable o archivo de salida
-OUT_BASIC_CLIENT = $(BASIC)/cliente
+OUT_BASIC_RECEIVER = $(BASIC)/receptor
 
 # Servidor y cliente de mayúsculas
 MAYUS = mayus
 
 ## Servidor de mayúsculas
 ### Fuentes
-SRC_MAYUS_SERVER_SPECIFIC = $(MAYUS)/servidormay.c
+SRC_MAYUS_SERVER_SPECIFIC = $(MAYUS)/servidorUDP.c
 SRC_MAYUS_SERVER = $(SRC_MAYUS_SERVER_SPECIFIC) $(COMMON)
 
 ### Objetos
 OBJ_MAYUS_SERVER = $(SRC_MAYUS_SERVER:.c=.o)
 
 ### Ejecutable o archivo de salida
-OUT_MAYUS_SERVER = $(MAYUS)/servidormay
+OUT_MAYUS_SERVER = $(MAYUS)/servidorUDP
 
 ## Cliente básico
 ### Fuentes
-SRC_MAYUS_CLIENT_SPECIFIC = $(MAYUS)/clientemay.c
+SRC_MAYUS_CLIENT_SPECIFIC = $(MAYUS)/clienteUDP.c
 SRC_MAYUS_CLIENT = $(SRC_MAYUS_CLIENT_SPECIFIC) $(COMMON)
 
 ### Objetos
 OBJ_MAYUS_CLIENT = $(SRC_MAYUS_CLIENT:.c=.o)
 
 ### Ejecutable o archivo de salida
-OUT_MAYUS_CLIENT = $(MAYUS)/clientemay
+OUT_MAYUS_CLIENT = $(MAYUS)/clienteUDP
 
 # Listamos todos los archivos de salida
-OUT = $(OUT_BASIC_SERVER) $(OUT_BASIC_CLIENT) $(OUT_MAYUS_SERVER) $(OUT_MAYUS_CLIENT)
+OUT = $(OUT_BASIC_TRANSMITTER) $(OUT_BASIC_RECEIVER) $(OUT_MAYUS_SERVER) $(OUT_MAYUS_CLIENT)
 
-# Servidor remoto al que subir los archivos relacionados con servidores
-REMOTE_HOST = debian-server
-REMOTE_USER = pedro
-REMOTE_DIR = ~/ServidorRedes
-REMOTE_SRC_DIR = $(REMOTE_DIR)/src
-REMOTE_HEADERS_DIR = $(REMOTE_SRC_DIR)/server
+# # Servidor remoto al que subir los archivos relacionados con servidores
+# REMOTE_HOST = debian-server
+# REMOTE_USER = pedro
+# REMOTE_DIR = ~/ServidorRedes
+# REMOTE_SRC_DIR = $(REMOTE_DIR)/src
+# REMOTE_HEADERS_DIR = $(REMOTE_SRC_DIR)/server
 
 
 ############
@@ -86,25 +86,19 @@ REMOTE_HEADERS_DIR = $(REMOTE_SRC_DIR)/server
 # Regla por defecto: compila todos los ejecutables
 all: $(OUT)
 
-# Compila ambos servidores
-server: $(OUT_BASIC_SERVER) $(OUT_MAYUS_SERVER)
-
-# Compila ambos clientes
-client: $(OUT_BASIC_CLIENT) $(OUT_MAYUS_CLIENT)
-
-# Compila servidor y cliente básicos
-basic: $(OUT_BASIC_SERVER) $(OUT_BASIC_CLIENT)
+# Compila emisor y receptor básicos
+basic: $(OUT_BASIC_TRANSMITTER) $(OUT_BASIC_RECEIVER)
 
 # Compila servidor y cliente de mayúsculas
 mayus: $(OUT_MAYUS_SERVER) $(OUT_MAYUS_CLIENT)
 
 # Genera el ejecutable del servidor básico, dependencia de sus objetos.
-$(OUT_BASIC_SERVER): $(OBJ_BASIC_SERVER)
-	$(CC) $(CFLAGS) -o $@ $(OBJ_BASIC_SERVER)
+$(OUT_BASIC_TRANSMITTER): $(OBJ_BASIC_TRANSMITTER)
+	$(CC) $(CFLAGS) -o $@ $(OBJ_BASIC_TRANSMITTER)
 
 # Genera el ejecutable del cliente básico, dependencia de sus objetos.
-$(OUT_BASIC_CLIENT): $(OBJ_BASIC_CLIENT)
-	$(CC) $(CFLAGS) -o $@ $(OBJ_BASIC_CLIENT) 
+$(OUT_BASIC_RECEIVER): $(OBJ_BASIC_RECEIVER)
+	$(CC) $(CFLAGS) -o $@ $(OBJ_BASIC_RECEIVER) 
 
 # Genera el ejecutable del servidor de mayúsculas, dependencia de sus objetos.
 $(OUT_MAYUS_SERVER): $(OBJ_MAYUS_SERVER)
@@ -126,8 +120,8 @@ clean: cleanobj
 cleanobj:
 	find . -name "*.o" -delete
 
-deploy:
-	scp $(HEADERS) $(COMMON) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_HEADERS_DIR)
-	scp $(SRC_BASIC_SERVER_SPECIFIC) $(SRC_MAYUS_SERVER_SPECIFIC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_SRC_DIR)
-	ssh $(REMOTE_USER)@$(REMOTE_HOST) make --directory=$(REMOTE_DIR)
+# deploy:
+# 	scp $(HEADERS) $(COMMON) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_HEADERS_DIR)
+# 	scp $(SRC_BASIC_TRANSMITTER_SPECIFIC) $(SRC_MAYUS_SERVER_SPECIFIC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_SRC_DIR)
+# 	ssh $(REMOTE_USER)@$(REMOTE_HOST) make --directory=$(REMOTE_DIR)
 
