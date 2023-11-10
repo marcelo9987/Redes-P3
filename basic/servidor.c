@@ -8,12 +8,12 @@
 
 #include "server.h"
 #include "loging.h"
-
+// --
 #define MESSAGE_SIZE 128
 #define DEFAULT_PORT 8000
 #define DEFAULT_BACKLOG 16
 #define DEFAULT_LOG "log"
-
+//--
 /**
  * Estructura de datos para pasar a la función process_args.
  * Debe contener siempre los campos int argc, char** argv, provenientes de main,
@@ -59,7 +59,7 @@ void handle_connection(Server server, Client client);
 
 
 
-int main(int argc, char** argv) {
+int main(int argc, char* argv[]){
     Server server;
     Client client;
     uint16_t port;
