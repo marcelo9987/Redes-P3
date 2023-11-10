@@ -20,10 +20,10 @@
 #define fail(message) { perror(ANSI_COLOR_RED message); exit(EXIT_FAILURE); }
 
 /* Macro para imprimir en el log */
-#define log_printf(log, format, ...) { if ((log)) fprintf((log), "%s " format , identify(), ##__VA_ARGS__); }
+#define log_printf(log, format, ...) { if (log) fprintf(log, "%s " format , identify(), ##__VA_ARGS__); }
 
 /* Macro para imprimir errores en el log */
-#define log_printf_err(log, format, ...) { log_printf((log), ANSI_COLOR_RED (format) ANSI_COLOR_RESET, ##__VA_ARGS__); }
+#define log_printf_err(log, format, ...) { log_printf(log, ANSI_COLOR_RED format ANSI_COLOR_RESET, ##__VA_ARGS__); }
 
 
 /**

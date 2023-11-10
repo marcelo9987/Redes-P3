@@ -35,6 +35,10 @@
 *.i*86
 *.x86_64
 *.hex
+basic/emisor
+basic/receptor
+mayus/servidorUDP
+mayus/clienteUDP
 
 # Debug files
 *.dSYM/
