@@ -10,7 +10,6 @@
 #define MAX_BYTES_RECVFROM 128
 
 #include "../host/host.h"
-#include "../host/client.h"
 #include "../host/loging.h"
 
 #define MAX_BYTES_RECV 128
@@ -96,7 +95,7 @@ void handle_data(Host self, Host other)
     char received_messsage[MAX_BYTES_RECVFROM];
 
     int size_addr = sizeof(struct sockaddr);
-    while ((received_bytes = recvfrom(self.socket, received_messsage, MAX_BYTES_RECV, 0, (struct sockaddr*) &(other.address), &size_addr) != 0)
+    while ((received_bytes = recvfrom(self.socket, received_messsage, MAX_BYTES_RECV, 0, (struct sockaddr *) &(other.address), (socklen_t *) &size_addr) != 0))
     {
         // Se recibe hasta finalizar conexión
         if (received_bytes < 0)
@@ -104,8 +103,8 @@ void handle_data(Host self, Host other)
             fail("Error en la recepción del mensaje");
         }
 
-        printf("Mensaje recibido : %s\n", server_message);
-        printf("Han sido recibidos %ld bytes.\n", recv_bytes);
+        printf("Mensaje recibido : %s\n", received_messsage);
+        printf("Han sido recibidos %ld bytes.\n", received_bytes);
 
     }
 }
@@ -115,15 +114,13 @@ static void print_help(char *executable_name)
     /** Cabecera y modo de ejecución **/
     printf("Uso: %s [-p] <port> [-h]");
 
-    //todo: adáptame
     /** Lista de opciones de uso **/
     printf(" Opción\t\tOpción larga\t\tSignificado\n");
-    printf(" -i/-I <IP>\t--ip/--IP <IP>\t\tIP del servidor al que conectarse, o \"localhost\" si el servidor se ejecuta en el mismo host que el cliente.\n");
     printf(" -p <port>\t--port <port>\t\tPuerto en el que escucha el servidor al que conectarse.\n");
     printf(" -h\t\t--help\t\t\tMostrar este texto de ayuda y salir.\n");
 
     /** Consideraciones adicionales **/
-    printf("\nPueden especificarse los parámetros <IP> y <port> para la IP y puerto en los que escucha el servidor sin escribir las opciones '-I' ni '-p', siempre y cuando estos sean el primer y segundo parámetros que se pasan a la función, respectivamente.\n");
+    printf("\nPueden especificarse los parámetros <port> para el puerto en los que escucha el servidor sin escribir la opción '-p', siempre y cuando esta sea el primer parámetro que se pasa a la función.\n");
     printf("\nSi se especifica varias veces un argumento, el comportamiento está indefinido.\n");
 
 }
@@ -134,7 +131,7 @@ static void process_args(struct arguments args)
     uint8_t set_ip = 0, set_port = 0;   /* Flags para saber si se setearon la IP y puerto */
     int i;
 
-    for (int i = 1; i < args.argc; i++)
+    for (i = 1; i < args.argc; i++)
     {
         /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
         current_arg = args.argv[i];
@@ -154,8 +151,8 @@ static void process_args(struct arguments args)
                 case 'p':   /* Puerto */
                     if (++i < args.argc)
                     {
-                        *args.server_port = atoi(args.argv[i]);
-                        if (*args.server_port < 0)
+                        *args.self_port = atoi(args.argv[i]);
+                        if (*args.self_port < 0)
                         {
                             fprintf(stderr, "El valor de puerto especificado (%s) no es válido.\n\n", args.argv[i]);
                             print_help(args.argv[0]);
@@ -177,27 +174,23 @@ static void process_args(struct arguments args)
                     print_help(args.argv[0]);
                     exit(EXIT_FAILURE);
             }
-    } else if (i == 1)
-    {    /* Se especificó la IP como primer argumento */
-        if (!strcmp(args.argv[i], "localhost"))
-        { args.argv[i] = "127.0.0.1"; } /* Permitir al cliente indicar localhost como IP */
-        strncpy(args.server_ip, args.argv[i], INET_ADDRSTRLEN);
-        set_ip = 1;
-    } else if (i == 2)
-    {    /* Se especificó el puerto como segundo argumento */
-        *args.server_port = atoi(args.argv[i]);
-        if (*args.server_port < 0)
-        {
-            fprintf(stderr, "El valor de puerto especificado (%s) no es válido.\n\n", args.argv[i]);
-            print_help(args.argv[0]);
-            exit(EXIT_FAILURE);
         }
-        set_port = 1;
+        if (i == 1)
+        {    /* Se especificó el puerto como primer argumento */
+            *args.self_port = atoi(args.argv[i]);
+            if (*args.self_port < 0)
+            {
+                fprintf(stderr, "El valor de puerto especificado (%s) no es válido.\n\n", args.argv[i]);
+                print_help(args.argv[0]);
+                exit(EXIT_FAILURE);
+            }
+            set_port = 1;
+        }
     }
-}
     if (!set_port)
     {
         fprintf(stderr, "%s%s\n", "No se especificó el puerto del servidor al que conectarse.\n");
         print_help(args.argv[0]);
         exit(EXIT_FAILURE);
     }
+}
