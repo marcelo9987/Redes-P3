@@ -111,7 +111,7 @@ static void process_args(struct arguments args)
     char *current_arg;
 
     /* Inicializar los valores de puerto y backlog a sus valores por defecto */
-    strcpy(args.receiver_ip, DEFAULT_RECEIVER_IP);
+    args.receiver_ip=DEFAULT_RECEIVER_IP;
     *args.port = DEFAULT_PORT;
     *args.backlog = DEFAULT_BACKLOG;
     *args.logfile = DEFAULT_LOG;
@@ -197,10 +197,13 @@ static void process_args(struct arguments args)
                     if (++i < args.argc)
                     {
                         if (!strcmp(args.argv[i], "localhost"))
-                        { args.argv[i] = "127.0.0.1"; } /* Permitir al cliente indicar localhost como IP */
-                        strncpy(args.receiver_ip, args.argv[i], INET_ADDRSTRLEN);
+                        {
+                            args.argv[i] = "127.0.0.1"; } /* Permitir al cliente indicar localhost como IP */
+                            args.receiver_ip=malloc(INET_ADDRSTRLEN);
+                            strncpy(args.receiver_ip, args.argv[i], INET_ADDRSTRLEN);
                         set_ip = 1;
                     }
+                    break;
                 default:
                     fprintf(stderr, "Opción '%s' desconocida\n\n", current_arg);
                     print_help(args.argv[0]);
