@@ -109,7 +109,7 @@ $(OUT_MAYUS_CLIENT): $(OBJ_MAYUS_CLIENT)
 	$(CC) $(CFLAGS) -o $@ $(OBJ_MAYUS_CLIENT)
 
 # Genera los ficheros objeto .o necesarios, dependencia de sus respectivos .c y todas las cabeceras.
-%.o: $(BASIC)/%.c $(HEADERS)
+%.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $< $(INCLUDES)
 
 # Borra todos los resultados de la compilación (prerrequisito: cleanobj)
