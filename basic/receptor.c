@@ -97,7 +97,7 @@ void handle_data(Host self, Host* other)
     char received_messsage[MAX_BYTES_RECVFROM];
 
     int size_addr = sizeof(struct sockaddr);
-    while ((received_bytes = recvfrom(self.socket, received_messsage, MAX_BYTES_RECV, 0, (struct sockaddr *) &(other.address), (socklen_t *) &size_addr) != 0))
+    while ((received_bytes = recvfrom(self.socket, received_messsage, MAX_BYTES_RECV, 0, (struct sockaddr *) &(other->address), (socklen_t *) &size_addr) != 0))
     {
         // Se recibe hasta finalizar conexión
         if (received_bytes < 0)
@@ -109,7 +109,7 @@ void handle_data(Host self, Host* other)
         printf("Han sido recibidos %ld bytes.\n", received_bytes);
 
     }
-    *other = create_remote_host(AF_INET, SOCK_DGRAM, 0, inet_ntoa(other.address.sin_addr), ntohs(other.address.sin_port));
+    *other = create_remote_host(AF_INET, SOCK_DGRAM, 0, inet_ntoa(other->address.sin_addr), ntohs(other->address.sin_port));
 }
 
 static void print_help(char *executable_name)
