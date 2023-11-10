@@ -40,7 +40,7 @@ typedef struct {
  * @return  Host que guarda toda la información relevante sobre sí mismo con la que
  *          fue creado, y con un socket abierto y conectado por el puerto  especificado.
  */
-Host create_self_host(int domain, int type, int protocol, uint16_t port, char* logfile);
+Host create_own_host(int domain, int type, int protocol, uint16_t port, char* logfile);
 
 
 /**
