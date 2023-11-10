@@ -117,9 +117,31 @@ Host create_own_host(int domain, int type, int protocol, uint16_t port, char* lo
  * @return  Host con toda la información relevante y disponible sobre el host remoto.
  */
 Host create_remote_host(int domain, int type, int protocol, char* ip, uint16_t port) {
-    Host host;
+    Host remote;
 
-    return host;
+    memset(&remote, 0, sizeof(Host));   /* Inicializar los campos a 0 */
+
+    remote = (Host) {
+        .domain = domain,
+        .type = type,
+        .protocol = protocol,
+        .port = port,
+        .address.sin_family = domain,
+        .address.sin_port = htons(port)
+    };
+
+    if (inet_pton(remote.domain, ip, &(remote.address.sin_addr)) != 1) { /* La string no se pudo traducir a una IP válida */
+        fprintf(stderr, "La IP especificada no es válida\n\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Guardar la IP del host remoto en formato textual */
+    remote.ip = (char *) calloc(strlen(ip) + 1, sizeof(char));
+    strcpy(remote.ip, ip);
+
+    remote.socket = -1; /* Ponemos el socket a un valor no permitido para saber que no se puede usar y que no hay que cerrarlo */
+
+    return remote;
 }
 
 
