@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <string.h>
+#include <arpa/inet.h>
 
 //todo: valor temporal para que compile. Hay que buscarle sitio y valor adecuado
 #define MAX_BYTES_RECVFROM 128
@@ -60,7 +61,7 @@ static void print_help(char *exe_name);
  * @param args  Estructura con los argumentos del programa y punteros a las
  *              variables que necesitan inicialización.
  */
-void handle_data(Host self, Host other);
+void handle_data(Host self, Host *other);
 
 int main(int argc, char *argv[])
 {
@@ -78,18 +79,19 @@ int main(int argc, char *argv[])
 
     process_args(args);
 
-    receiver = create_self_host(AF_INET, SOCK_DGRAM, 0, self_port, log_file);
+    receiver = create_own_host(AF_INET, SOCK_DGRAM, 0, self_port, log_file);
 
     Host other;
 
-    handle_data(receiver, other);
+    handle_data(receiver, &other);
 
     close_host(&receiver);
+    close_host(&other);
 
     exit(EXIT_SUCCESS);
 }
 
-void handle_data(Host self, Host other)
+void handle_data(Host self, Host* other)
 {
     ssize_t received_bytes = 0;
     char received_messsage[MAX_BYTES_RECVFROM];
@@ -107,6 +109,7 @@ void handle_data(Host self, Host other)
         printf("Han sido recibidos %ld bytes.\n", received_bytes);
 
     }
+    *other = create_remote_host(AF_INET, SOCK_DGRAM, 0, inet_ntoa(other.address.sin_addr), ntohs(other.address.sin_port));
 }
 
 static void print_help(char *executable_name)

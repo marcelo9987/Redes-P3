@@ -6,26 +6,32 @@
 #include <unistd.h>
 #include <string.h>
 
-#include "server.h"
-#include "loging.h"
+#include "../host/host.h"
+#include "../host/loging.h"
 // --
+
 #define MESSAGE_SIZE 128
+
+#define DEFAULT_RECEIVER_IP "127.0.0.1"
 #define DEFAULT_PORT 8000
 #define DEFAULT_BACKLOG 16
 #define DEFAULT_LOG "log"
 //--
+
 /**
  * Estructura de datos para pasar a la función process_args.
  * Debe contener siempre los campos int argc, char** argv, provenientes de main,
  * y luego una cantidad variable de punteros a las variables que se quieran inicializar
  * a partir de la entrada del programa.
  */
-struct arguments {
+struct arguments
+{
     int argc;
-    char** argv;
-    uint16_t* port;
-    int* backlog;
-    char** logfile;
+    char **argv;
+    uint16_t *port;
+    char *receiver_ip;
+    int *backlog;
+    char **logfile;
 };
 
 /**
@@ -44,81 +50,47 @@ static void process_args(struct arguments args);
  *
  * @param exe_name  Nombre del ejecutable (argv[0])
  */
-static void print_help(char* exe_name);
-
-/**
- * @brief   Maneja la conexión desde el lado del servidor.
- *
- * Envía un mensaje al cliente diciéndole que se aceptó su conexión
- * y con la información del servidor.
- *
- * @param server    Servidor que maneja la conexión.
- * @param client    Cliente conectado que solicita el servicio.
- */
-void handle_connection(Server server, Client client);
+static void print_help(char *exe_name);
 
 
 // --
-int main(int argc, char* argv[]){
-    Server server;
-    Client client;
+int main(int argc, char *argv[])
+{
+    Host self;
+    Host other;
     uint16_t port;
     int backlog;
-    char* logfile;
+    char *logfile;
     struct arguments args = {
-        .argc = argc,
-        .argv = argv,
-        .port = &port,
-        .backlog = &backlog,
-        .logfile = &logfile
+            .argc = argc,
+            .argv = argv,
+            .port = &port,
+            .backlog = &backlog,
+            .logfile = &logfile
     };
-
     set_colors();
 
     process_args(args);
 
-    printf("Ejecutando servidor con parámetros: PORT=%u, BACKLOG=%d, LOG=%s.\n\n", port, backlog, logfile);
-    server = create_server(AF_INET, SOCK_STREAM, 0, port, backlog, logfile);
+    self = create_own_host(AF_INET, SOCK_DGRAM, 0, port, logfile);
 
-    while (!terminate) {
-        if (!socket_io_pending) pause();    /* Pausamos la ejecución hasta que se reciba una señal de I/O o de terminación */
-        listen_for_connection(server, &client);
-        if (client.socket == -1) continue;  /* Falsa alarma, no había conexiones pendientes o se recibió una señal de terminación */
+    other = create_remote_host(AF_INET, SOCK_DGRAM, 0, args.receiver_ip, port);
 
-        handle_connection(server, client);
+    sendto(self.socket, "Hola", 4, 0, (struct sockaddr *) &other.address, sizeof(other.address));
 
-        printf("\nCerrando la conexión del cliente %s:%u.\n\n", client.ip, client.port);
-        log_printf("Cerrando la conexión del cliente %s:%u.\n", client.ip, client.port);
-        close_client(&client);  /* Ya hemos gestionado al cliente, podemos olvidarnos de él */
-    }
+    close_host(&self);
 
-    printf("\nCerrando el servidor y saliendo...\n");
-    close_server(&server);
-
-    exit(EXIT_SUCCESS);
+    return 0;
 }
 
-
-void handle_connection(Server server, Client client) {
-    char message[MESSAGE_SIZE] = {0};
-    ssize_t sent_bytes;
-
-    printf("\nManejando la conexión del cliente %s:%u...\n", client.ip, client.port);
-    log_printf("Manejando la conexión del cliente %s:%u...\n", client.ip, client.port);
-
-    snprintf(message, MESSAGE_SIZE, "Tu conexión al servidor %s en %s:%u ha sido aceptada.\n", server.hostname, server.ip, server.port);
-
-    /* Enviar el mensaje al cliente */
-    if ( (sent_bytes = send(client.socket, message, strlen(message) + 1, 0)) < 0) fail("No se pudo enviar el mensaje");
-}
-
-
-static void print_help(char* exe_name){
+static void print_help(char *exe_name)
+{
     /** Cabecera y modo de ejecución **/
-    printf("Uso: %s [[-p] <port>] [-b <backlog>] [-l <log> | --no-log] [-h]\n\n", exe_name);
+    printf("Uso: %s [[-i] <ip>] [[-p] <port>] [-b <backlog>] [-l <log> | --no-log] [-h]\n\n", exe_name);
 
     /** Lista de opciones de uso **/
     printf(" Opción\t\tOpción larga\t\tSignificado\n");
+    printf(" -i <ip>\t--ip <ip>\t\tIP del servidor al que conectarse.\n");
     printf(" -p <port>\t--port <port>\t\tPuerto en el que escuchará el servidor.\n");
     printf(" -b <backlog>\t--backlog <backlog>\tTamaño máximo de la cola de conexiones pendientes.\n");
     printf(" -l <log>\t--log <log>\t\tNombre del archivo en el que guardar el registro de actividad del servidor.\n");
@@ -126,65 +98,89 @@ static void print_help(char* exe_name){
     printf(" -h\t\t--help\t\t\tMostrar este texto de ayuda y salir.\n");
 
     /** Consideraciones adicionales **/
+    printf("\nSi se especifica la opción '-i', debe especificarse también la opción '-p'.\n");
     printf("\nPuede especificarse el parámetro <port> para el puerto en el que escucha el servidor sin escribir la opción '-p', siempre y cuando este sea el primer parámetro que se pasa a la función.\n");
     printf("\nSi no se especifica alguno de los argumentos, el servidor se ejecutará con su valor por defecto, a saber: DEFAULT_PORT=%u; DEFAULT_BACKLOG=%d, DEFAULT_LOG=%s\n", DEFAULT_PORT, DEFAULT_BACKLOG, DEFAULT_LOG);
     printf("\nSi se especifica varias veces un argumento, o se especifican las opciones \"--log\" y \"--no-log\" a la vez, el comportamiento está indefinido.\n");
 }
 
 
-static void process_args(struct arguments args) {
+static void process_args(struct arguments args)
+{
     int i;
-    char* current_arg;
+    char *current_arg;
 
     /* Inicializar los valores de puerto y backlog a sus valores por defecto */
+    strcpy(args.receiver_ip, DEFAULT_RECEIVER_IP);
     *args.port = DEFAULT_PORT;
     *args.backlog = DEFAULT_BACKLOG;
     *args.logfile = DEFAULT_LOG;
 
-    for (i = 1; i < args.argc; i++) { /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
+    _Bool set_ip = 0;
+
+    for (i = 1; i < args.argc; i++)
+    { /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
         current_arg = args.argv[i];
-        if (current_arg[0] == '-') { /* Flag de opción */
+        if (current_arg[0] == '-')
+        { /* Flag de opción */
             /* Manejar las opciones largas */
-            if (current_arg[1] == '-') { /* Opción larga */
-                if (!strcmp(current_arg, "--port")) current_arg = "-p";
-                else if (!strcmp(current_arg, "--backlog")) current_arg = "-b";
-                else if (!strcmp(current_arg, "--log")) current_arg = "-l";
-                else if (!strcmp(current_arg, "--no-log")) current_arg = "-n";
-                else if (!strcmp(current_arg, "--help")) current_arg = "-h";
-            } 
-            switch(current_arg[1]) {
+            if (current_arg[1] == '-')
+            { /* Opción larga */
+                if (!strcmp(current_arg, "--IP") || !strcmp(current_arg, "--ip"))
+                { current_arg = "-i"; }
+                if (!strcmp(current_arg, "--port"))
+                { current_arg = "-p"; }
+                else if (!strcmp(current_arg, "--backlog"))
+                { current_arg = "-b"; }
+                else if (!strcmp(current_arg, "--log"))
+                { current_arg = "-l"; }
+                else if (!strcmp(current_arg, "--no-log"))
+                { current_arg = "-n"; }
+                else if (!strcmp(current_arg, "--help"))
+                { current_arg = "-h"; }
+            }
+            switch (current_arg[1])
+            {
                 case 'p':   /* Puerto */
-                    if (++i < args.argc) {
+                    if (++i < args.argc)
+                    {
                         *args.port = atoi(args.argv[i]);
-                        if (*args.port < 0) {
+                        if (*args.port < 0)
+                        {
                             fprintf(stderr, "El valor de puerto especificado (%s) no es válido.\n\n", args.argv[i]);
                             print_help(args.argv[0]);
                             exit(EXIT_FAILURE);
                         }
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "Puerto no especificado tras la opción '-p'.\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
                     }
                     break;
                 case 'b':   /* Backlog */
-                    if (++i < args.argc) {
+                    if (++i < args.argc)
+                    {
                         *args.backlog = atoi(args.argv[i]);
-                        if (*args.backlog < 0) {
+                        if (*args.backlog < 0)
+                        {
                             fprintf(stderr, "El valor de backlog especificado (%s) no es válido.\n\n", args.argv[i]);
                             print_help(args.argv[0]);
                             exit(EXIT_FAILURE);
                         }
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "Tamaño del backlog no especificado tras la opción '-b'.\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
                     }
                     break;
                 case 'l':   /* Log */
-                    if (++i < args.argc) {
+                    if (++i < args.argc)
+                    {
                         *args.logfile = args.argv[i];
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "Nombre del log no especificado tras la opción '-l'.\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
@@ -196,18 +192,36 @@ static void process_args(struct arguments args) {
                 case 'h':   /* Ayuda */
                     print_help(args.argv[0]);
                     exit(EXIT_SUCCESS);
+                case 'I':   /* IP */
+                case 'i':
+                    if (++i < args.argc)
+                    {
+                        if (!strcmp(args.argv[i], "localhost"))
+                        { args.argv[i] = "127.0.0.1"; } /* Permitir al cliente indicar localhost como IP */
+                        strncpy(args.receiver_ip, args.argv[i], INET_ADDRSTRLEN);
+                        set_ip = 1;
+                    }
                 default:
                     fprintf(stderr, "Opción '%s' desconocida\n\n", current_arg);
                     print_help(args.argv[0]);
                     exit(EXIT_FAILURE);
             }
-        } else if (i == 1) {    /* Se especificó el puerto como primer argumento */
+        } else if (i == 1)
+        {    /* Se especificó el puerto como primer argumento */
             *args.port = atoi(args.argv[i]);
-            if (*args.port < 0) {
+            if (*args.port < 0)
+            {
                 fprintf(stderr, "El valor de puerto especificado como primer argumento (%s) no es válido.\n\n", args.argv[i]);
                 print_help(args.argv[0]);
                 exit(EXIT_FAILURE);
             }
         }
     }
+    if (!set_ip)
+    {
+        fprintf(stderr, "%s\n", "No se especificó la IP del servidor al que conectarse.\n");
+        print_help(args.argv[0]);
+        exit(EXIT_FAILURE);
+    }
 }
+
