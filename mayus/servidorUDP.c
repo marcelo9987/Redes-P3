@@ -7,9 +7,10 @@
 #include <string.h>
 #include <wctype.h>
 #include <locale.h>
+#include <arpa/inet.h>
 
-#include "server.h"
-#include "loging.h"
+#include "../host/host.h"
+#include "../host/loging.h"
 
 #define MAX_BYTES_RECV 2056
 #define DEFAULT_PORT 8000
@@ -22,12 +23,13 @@
  * y luego una cantidad variable de punteros a las variables que se quieran inicializar
  * a partir de la entrada del programa.
  */
-struct arguments {
+struct arguments
+{
     int argc;
-    char** argv;
-    uint16_t* port;
-    int* backlog;
-    char** logfile;
+    char **argv;
+    uint16_t *port;
+    int *backlog;
+    char **logfile;
 };
 
 /**
@@ -46,7 +48,7 @@ static void process_args(struct arguments args);
  *
  * @param exe_name  Nombre del ejecutable (argv[0])
  */
-static void print_help(char* exe_name);
+static void print_help(char *exe_name);
 
 /**
  * @brief   Transforma una string a mayúsculas
@@ -60,7 +62,7 @@ static void print_help(char* exe_name);
  * @return  String dinámicamente alojada (por tanto, debe liberarse con un free) que contiene los mismos
  *          caractereres que source pero en mayúsculas.
  */
-static char* toupper_string(const char* source);
+static char *toupper_string(const char *source);
 
 /**
  * @brief   Maneja la conexión desde el lado del servidor.
@@ -70,71 +72,89 @@ static char* toupper_string(const char* source);
  * @param server    Servidor que maneja la conexión.
  * @param client    Cliente conectado que solicita el servicio.
  */
-void handle_connection(Server server, Client client);
+void handle_connection(Host server, Host *client);
 
 
-
-int main(int argc, char** argv) {
-    Server server;
-    Client client;
+int main(int argc, char **argv)
+{
+    Host server;
+    Host client;
     uint16_t port;
     int backlog;
-    char* logfile;
+    char *logfile;
     struct arguments args = {
-        .argc = argc,
-        .argv = argv,
-        .port = &port,
-        .backlog = &backlog,
-        .logfile = &logfile
+            .argc = argc,
+            .argv = argv,
+            .port = &port,
+            .backlog = &backlog,
+            .logfile = &logfile
     };
 
     set_colors();
 
-    if (!setlocale(LC_ALL, "")) fail("No se pudo establecer la locale del programa");   /* Establecer la locale según las variables de entorno */
+    if (!setlocale(LC_ALL, ""))
+    fail("No se pudo establecer la locale del programa");   /* Establecer la locale según las variables de entorno */
 
     process_args(args);
 
     printf("Ejecutando servidor de mayúsculas con parámetros: PORT=%u, BACKLOG=%d, LOG=%s.\n\n", port, backlog, logfile);
-    server = create_server(AF_INET, SOCK_STREAM, 0, port, backlog, logfile);
+    server = create_own_host(AF_INET, SOCK_DGRAM, 0, port, logfile);
 
-    while (!terminate) {
-        if (!socket_io_pending) pause();    /* Pausamos la ejecución hasta que se reciba una señal de I/O o de terminación */
-        listen_for_connection(server, &client);
-        if (client.socket == -1) continue;  /* Falsa alarma, no había conexiones pendientes o se recibió una señal de terminación */
+    while (1)
+    {
+//        if (!socket_io_pending) pause();    /* Pausamos la ejecución hasta que se reciba una señal de I/O o de terminación */
+//        listen_for_connection(server, &client);
+//        if (client.socket == -1) continue;  /* Falsa alarma, no había conexiones pendientes o se recibió una señal de terminación */
 
-        handle_connection(server, client);
+
+        handle_connection(server, &client);
 
         printf("\nCerrando la conexión del cliente %s:%u.\n\n", client.ip, client.port);
-        log_printf("Cerrando la conexión del cliente %s:%u.\n", client.ip, client.port);
-        close_client(&client);  /* Ya hemos gestionado al cliente, podemos olvidarnos de él */
+//        log_printf("Cerrando la conexión del cliente %s:%u.\n", client.ip, client.port);//todo: buscar arreglo
+//        close_client(&client);  /* Ya hemos gestionado al cliente, podemos olvidarnos de él */ // todo: no te olvides de esto
     }
 
     printf("\nCerrando el servidor y saliendo...\n");
-    close_server(&server);
+//    close_server(&server);
 
     exit(EXIT_SUCCESS);
 }
 
 
-void handle_connection(Server server, Client client) {
-    char* output;
+void handle_connection(Host server, Host *client)
+{
+    char *output;
     char input[MAX_BYTES_RECV];
     ssize_t recv_bytes, sent_bytes;
 
-    printf("\nManejando la conexión del cliente %s:%u...\n", client.ip, client.port);
-    log_printf("Manejando la conexión del cliente %s:%u...\n", client.ip, client.port);
+//  printf("\nManejando la conexión del cliente %s:%u...\n", client->ip, client->port);
+    printf("\nEsperando mensaje...\n\n");
+//  log_printf("Manejando la conexión del cliente %s:%u...\n", client.ip, client.port); //todo: buscar arreglo
 
-    while (1) {
-        if ( (recv_bytes = recv(client.socket, input, MAX_BYTES_RECV, 0)) < 0) fail("Error al recibir la línea de texto");
-        if (!recv_bytes) return;    /* Se recibió una orden de cerrar la conexión */
+    while (1)
+    {
+//        if ( (recv_bytes = recv(client.socket, input, MAX_BYTES_RECV, 0)) < 0) fail("Error al recibir la línea de texto");
+        socklen_t client_addr_size = sizeof(client->address);
+        if ((recv_bytes = recvfrom(server.socket, input, MAX_BYTES_RECV, 0, (struct sockaddr *) &(client->address), &client_addr_size)) < 0)
+        fail("Error al recibir la línea de texto");
 
-        output = toupper_string(input); 
+        printf("Paquete recibido de %s:%d\n", inet_ntoa(client->address.sin_addr), ntohs(client->address.sin_port));
 
-        if ( (sent_bytes = send(client.socket, output, strlen(output) + 1, 0)) < 0) {
-            log_printf(ANSI_COLOR_RED "Error al enviar línea de texto al cliente.\n");
+        if (!recv_bytes)
+        { return; }    /* Se recibió una orden de cerrar la conexión */
+
+        printf("\t Mansaje recibido: %s\n", input);
+
+        output = toupper_string(input);
+
+//        if ( (sent_bytes = send(client.socket, output, strlen(output) + 1, 0)) < 0) {
+        if ((sent_bytes = sendto(server.socket, output, strlen(output) + 1, 0, (struct sockaddr *) &(client->address), client_addr_size)) < 0)
+        {
+//            log_printf(ANSI_COLOR_RED "Error al enviar línea de texto al cliente.\n");
             fail("Error al enviar la línea de texto al cliente");
-
         }
+
+        printf("Enviado: %s\n", output);
 
         if (output) free(output);
     }
@@ -153,11 +173,12 @@ void handle_connection(Server server, Client client) {
  * @return  String dinámicamente alojada (por tanto, debe liberarse con un free) que contiene los mismos
  *          caractereres que source pero en mayúsculas.
  */
-static char* toupper_string(const char* source) {
-    wchar_t* wide_source;
-    wchar_t* wide_destiny;
+static char *toupper_string(const char *source)
+{
+    wchar_t *wide_source;
+    wchar_t *wide_destiny;
     ssize_t wide_size, size;
-    char* destiny;
+    char *destiny;
     int i;
 
     wide_size = mbstowcs(NULL, source, 0); /* Calcular el número de wchar_t que ocupa el string source */
@@ -168,7 +189,8 @@ static char* toupper_string(const char* source) {
     /* Transformar la fuente en un wstring */
     mbstowcs(wide_source, source, wide_size + 1);
     /* Transformar wide_source a mayúsculas y guardarlo en wide_destiny */
-    for (i = 0; wide_source[i]; i++) {
+    for (i = 0; wide_source[i]; i++)
+    {
         wide_destiny[i] = towupper(wide_source[i]);
     }
 
@@ -177,14 +199,17 @@ static char* toupper_string(const char* source) {
     destiny = (char *) calloc(size + 1, sizeof(char));
     wcstombs(destiny, wide_destiny, size + 1);
 
-    if (wide_source) free(wide_source);
-    if (wide_destiny) free(wide_destiny);
+    if (wide_source)
+    { free(wide_source); }
+    if (wide_destiny)
+    { free(wide_destiny); }
 
     return destiny;
 }
 
 
-static void print_help(char* exe_name){
+static void print_help(char *exe_name)
+{
     /** Cabecera y modo de ejecución **/
     printf("Uso: %s [[-p] <port>] [-b <backlog>] [-l <log> | --no-log] [-h]\n\n", exe_name);
 
@@ -203,59 +228,77 @@ static void print_help(char* exe_name){
 }
 
 
-static void process_args(struct arguments args) {
+static void process_args(struct arguments args)
+{
     int i;
-    char* current_arg;
+    char *current_arg;
 
     /* Inicializar los valores de puerto y backlog a sus valores por defecto */
     *args.port = DEFAULT_PORT;
     *args.backlog = DEFAULT_BACKLOG;
     *args.logfile = DEFAULT_LOG;
 
-    for (i = 1; i < args.argc; i++) { /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
+    for (i = 1; i < args.argc; i++)
+    { /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
         current_arg = args.argv[i];
-        if (current_arg[0] == '-') { /* Flag de opción */
+        if (current_arg[0] == '-')
+        { /* Flag de opción */
             /* Manejar las opciones largas */
-            if (current_arg[1] == '-') { /* Opción larga */
-                if (!strcmp(current_arg, "--port")) current_arg = "-p";
-                else if (!strcmp(current_arg, "--backlog")) current_arg = "-b";
-                else if (!strcmp(current_arg, "--log")) current_arg = "-l";
-                else if (!strcmp(current_arg, "--no-log")) current_arg = "-n";
-                else if (!strcmp(current_arg, "--help")) current_arg = "-h";
-            } 
-            switch(current_arg[1]) {
+            if (current_arg[1] == '-')
+            { /* Opción larga */
+                if (!strcmp(current_arg, "--port"))
+                { current_arg = "-p"; }
+                else if (!strcmp(current_arg, "--backlog"))
+                { current_arg = "-b"; }
+                else if (!strcmp(current_arg, "--log"))
+                { current_arg = "-l"; }
+                else if (!strcmp(current_arg, "--no-log"))
+                { current_arg = "-n"; }
+                else if (!strcmp(current_arg, "--help"))
+                { current_arg = "-h"; }
+            }
+            switch (current_arg[1])
+            {
                 case 'p':   /* Puerto */
-                    if (++i < args.argc) {
+                    if (++i < args.argc)
+                    {
                         *args.port = atoi(args.argv[i]);
-                        if (*args.port < 0) {
+                        if (*args.port < 0)
+                        {
                             fprintf(stderr, "El valor de puerto especificado (%s) no es válido.\n\n", args.argv[i]);
                             print_help(args.argv[0]);
                             exit(EXIT_FAILURE);
                         }
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "Puerto no especificado tras la opción '-p'.\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
                     }
                     break;
                 case 'b':   /* Backlog */
-                    if (++i < args.argc) {
+                    if (++i < args.argc)
+                    {
                         *args.backlog = atoi(args.argv[i]);
-                        if (*args.backlog < 0) {
+                        if (*args.backlog < 0)
+                        {
                             fprintf(stderr, "El valor de backlog especificado (%s) no es válido.\n\n", args.argv[i]);
                             print_help(args.argv[0]);
                             exit(EXIT_FAILURE);
                         }
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "Tamaño del backlog no especificado tras la opción '-b'.\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
                     }
                     break;
                 case 'l':   /* Log */
-                    if (++i < args.argc) {
+                    if (++i < args.argc)
+                    {
                         *args.logfile = args.argv[i];
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "Nombre del log no especificado tras la opción '-l'.\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
@@ -272,9 +315,11 @@ static void process_args(struct arguments args) {
                     print_help(args.argv[0]);
                     exit(EXIT_FAILURE);
             }
-        } else if (i == 1) {    /* Se especificó el puerto como primer argumento */
+        } else if (i == 1)
+        {    /* Se especificó el puerto como primer argumento */
             *args.port = atoi(args.argv[i]);
-            if (*args.port < 0) {
+            if (*args.port < 0)
+            {
                 fprintf(stderr, "El valor de puerto especificado como primer argumento (%s) no es válido.\n\n", args.argv[i]);
                 print_help(args.argv[0]);
                 exit(EXIT_FAILURE);

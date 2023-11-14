@@ -5,12 +5,26 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <string.h>
+#include <arpa/inet.h>
 
-#include "client.h"
-#include "loging.h"
+#include "../host/host.h"
+#include "../host/loging.h"
 
-#define MAX_BYTES_RECV 2056
-#define FILENAME_LEN 128
+// --
+
+#define MESSAGE_SIZE 128
+
+#define DEFAULT_RECEIVER_IP "127.0.0.1"
+#define DEFAULT_PORT 8000
+#define DEFAULT_BACKLOG 16
+#define DEFAULT_LOG "log"
+
+#define FILENAME_LEN 256
+#define MAX_BYTES_RECV 128
+
+#define ANY_PORT 0
+
+//--
 
 
 /**
@@ -19,12 +33,13 @@
  * y luego una cantidad variable de punteros a las variables que se quieran inicializar
  * a partir de la entrada del programa.
  */
-struct arguments {
+struct arguments
+{
     int argc;
-    char** argv;
-    char* server_ip;
-    uint16_t* server_port;
-    char* input_file_name;
+    char **argv;
+    char *server_ip;
+    uint16_t *server_port;
+    char *input_file_name;
 };
 
 /**
@@ -43,7 +58,7 @@ static void process_args(struct arguments args);
  *
  * @param exe_name  Nombre del ejecutable (argv[0]).
  */
-static void print_help(char* exe_name);
+static void print_help(char *exe_name);
 
 /**
  * @brief   Maneja el intercambio de datos con el servidor.
@@ -55,89 +70,120 @@ static void print_help(char* exe_name);
  * @param client    Cliente que intercambia datos, previamente conectado al servidor.
  * @param input_file_name   Nombre del archivo de texto a transformar a mayúsculas.
  */
-void handle_data(Client client, char* input_file_name);
+void handle_data(Host client,Host *Server, char *input_file_name);
 
 
-
-int main(int argc,char **argv){
-    Client client;
+int main(int argc, char **argv)
+{
+    Host client;
+    Host server;
     char server_ip[INET_ADDRSTRLEN];
     char input_file_name[FILENAME_LEN];
     uint16_t server_port;
     struct arguments args = {
-        .argc = argc,
-        .argv = argv,
-        .server_ip = server_ip,
-        .server_port = &server_port,
-        .input_file_name = input_file_name
+            .argc = argc,
+            .argv = argv,
+            .server_ip = server_ip,
+            .server_port = &server_port,
+            .input_file_name = input_file_name
     };
-	
+
     set_colors();
 
     process_args(args);
 
-    client = create_client(AF_INET, SOCK_STREAM, 0, server_ip, server_port);
+    client = create_own_host(AF_INET, SOCK_DGRAM, 0, ANY_PORT, DEFAULT_LOG);
 
-    connect_to_server(client); 
+    server = create_remote_host(AF_INET, SOCK_DGRAM, 0, server_ip, server_port);
 
-    handle_data(client, input_file_name);
+//    connect_to_server(client); // Ya no hay que "conectar" el cliente, solo enviarle datos
 
-    close_client(&client);
+    handle_data(client,&server, input_file_name);
+
+//    close_client(&client);
 
     exit(EXIT_SUCCESS);
 }
 
 
-void handle_data(Client client, char* input_file_name){
+void handle_data(Host client, Host *server, char *input_file_name)
+{
     ssize_t sent_bytes = 0, recv_bytes = 0;
     FILE *fp_input, *fp_output;
     char recv_buffer[MAX_BYTES_RECV];
     size_t buffer_size; /* Necesitamos una variable con el tamaño del buffer para getline */
-    char* send_buffer;  /* Buffer para guardar las líneas del archivo a enviar. Como se usa getline, tiene que asignarse dinamicamente */
+    char *send_buffer;  /* Buffer para guardar las líneas del archivo a enviar. Como se usa getline, tiene que asignarse dinamicamente */
 
     /* Apertura de los archivos */
-    if ( !(fp_input = fopen(input_file_name, "r")) ) fail("Error en la apertura del archivo de lectura");
-	
+    if (!(fp_input = fopen(input_file_name, "r")))
+    fail("Error en la apertura del archivo de lectura");
+
     /* Enviamos el nombre del archivo */
-    printf("Se procede a enviar el archivo: %s\n", input_file_name);
+    printf("Se procede a enviar el archivo: %s al servidor con IP: %s y puerto: %d\n", input_file_name, inet_ntoa(server->address.sin_addr), server->port);
 
-    if ( (sent_bytes = send(client.socket, input_file_name, strlen(input_file_name) + 1, 0)) < 0) fail("No se pudo enviar el mensaje");
+    int ptr_addr_len = sizeof(struct sockaddr_in);
+    printf("\nEnviando: %s\n", input_file_name);
+//    if ((sent_bytes = send(client.socket, input_file_name, strlen(input_file_name) + 1, 0)) < 0)
+    if ((sent_bytes = sendto(client.socket, input_file_name, strlen(input_file_name) + 1, 0, (struct sockaddr *) &(server->address), ptr_addr_len)) < 0)
+    fail("No se pudo enviar el mensaje");
 
+//    printf("Esperando respuesta del servidor...\n");
+
+    socklen_t server_addr_len = sizeof(struct sockaddr_in);
     /* Esperamos a recibir la linea */
-    if( (recv_bytes = recv(client.socket, recv_buffer, MAX_BYTES_RECV, 0)) < 0) fail("No se pudo recibir el mensaje");
+    if ((recv_bytes = recvfrom(client.socket, recv_buffer, MAX_BYTES_RECV, 0,(struct sockaddr*) &(server->address), &server_addr_len )) < 0)
+    fail("No se pudo recibir el mensaje");
+
+    printf("Recibido: %s\n", recv_buffer);
 
     /* Recibido el nombre del archivo en mayúsculas */
-    /* Abrimos en modo escritura el archivo */    
-    if ( !(fp_output = fopen(recv_buffer, "w")) ) fail("Error en la apertura del archivo de escritura");
+    /* Abrimos en modo escritura el archivo */
+    if (!(fp_output = fopen(recv_buffer, "w")))
+    fail("Error en la apertura del archivo de escritura");
 
     /* Procesamiento y envio del archivo */
     /* Inicializamos el buffer de envío, en el que leeremos del archivo con getline */
     buffer_size = MAX_BYTES_RECV;
     send_buffer = (char *) calloc(buffer_size, sizeof(char));
-    while (!feof(fp_input)) {
+    while (!feof(fp_input))
+    {
         /* Leemos hasta que lo que devuelve getline es EOF, cerramos la conexión en ese caso */
-        if(getline(&send_buffer, &buffer_size, fp_input) == EOF){ /* Escaneamos la linea hasta el final del archivo */
+        if (getline(&send_buffer, &buffer_size, fp_input) == EOF)
+        { /* Escaneamos la linea hasta el final del archivo */
             shutdown(client.socket, SHUT_RD);   /* Le decimos al servidor que pare de recibir */
             continue;
         }
-        if ( (sent_bytes = send(client.socket, send_buffer, strlen(send_buffer) + 1, 0)) < 0) fail("No se pudo enviar el mensaje");
+
+        /* Enviamos la linea */
+        printf("\nEnviando: %s\n", input_file_name);
+//        if ((sent_bytes = send(client.socket, send_buffer, strlen(send_buffer) + 1, 0)) < 0)
+        if ((sent_bytes = sendto(client.socket, send_buffer, strlen(send_buffer) + 1, 0, (struct sockaddr *) &(server->address), sizeof(struct sockaddr_in))) < 0)
+        fail("No se pudo enviar el mensaje");
+
 
         /*Esperamos a recibir la linea*/
-        if( (recv_bytes = recv(client.socket, recv_buffer, MAX_BYTES_RECV,0)) < 0) fail("No se pudo recibir el mensaje");
+        if ((recv_bytes = recv(client.socket, recv_buffer, MAX_BYTES_RECV, 0)) < 0)
+        fail("No se pudo recibir el mensaje");
+
+        printf("Recibido: %s\n", recv_buffer);
 
         fprintf(fp_output, "%s", recv_buffer);
     }
-    
-    /* Cerramos los archivos al salir */
-    if (fclose(fp_input)) fail("No se pudo cerrar el archivo de lectura");
-    if (fclose(fp_output)) fail("No se pudo cerrar el archivo de escritura");
 
-    if (send_buffer) free(send_buffer);
+    /* Cerramos los archivos al salir */
+    if (fclose(fp_input))
+    fail("No se pudo cerrar el archivo de lectura");
+    if (fclose(fp_output))
+    fail("No se pudo cerrar el archivo de escritura");
+
+    if (send_buffer)
+    { free(send_buffer); }
 
     return;
 }
 
-static void print_help(char* exe_name){
+static void print_help(char *exe_name)
+{
     /** Cabecera y modo de ejecución **/
     printf("Uso: %s [-f] <file> [-i] <IP> [-p] <port> [-h]\n\n", exe_name);
 
@@ -153,54 +199,71 @@ static void print_help(char* exe_name){
     printf("\nSi se especifica varias veces un argumento, el comportamiento está indefinido.\n");
 }
 
-static void process_args(struct arguments args) {
+static void process_args(struct arguments args)
+{
     int i;
-    char* current_arg;
+    char *current_arg;
     uint8_t set_file = 0, set_ip = 0, set_port = 0;   /* Flags para saber si se setearon el fichero a convertir, la IP y puerto */
 
-    for (i = 1; i < args.argc; i++) { /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
+    for (i = 1; i < args.argc; i++)
+    { /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
         current_arg = args.argv[i];
-        if (current_arg[0] == '-') { /* Flag de opción */
+        if (current_arg[0] == '-')
+        { /* Flag de opción */
             /* Manejar las opciones largas */
-            if (current_arg[1] == '-') { /* Opción larga */
-                if (!strcmp(current_arg, "--IP") || !strcmp(current_arg, "--ip")) current_arg = "-i";
-                else if (!strcmp(current_arg, "--port")) current_arg = "-p";
-                else if (!strcmp(current_arg, "--file")) current_arg = "-f";
-                else if (!strcmp(current_arg, "--help")) current_arg = "-h";
-            } 
-            switch(current_arg[1]) {
+            if (current_arg[1] == '-')
+            { /* Opción larga */
+                if (!strcmp(current_arg, "--IP") || !strcmp(current_arg, "--ip"))
+                { current_arg = "-i"; }
+                else if (!strcmp(current_arg, "--port"))
+                { current_arg = "-p"; }
+                else if (!strcmp(current_arg, "--file"))
+                { current_arg = "-f"; }
+                else if (!strcmp(current_arg, "--help"))
+                { current_arg = "-h"; }
+            }
+            switch (current_arg[1])
+            {
                 case 'I':   /* IP */
                 case 'i':
-                    if (++i < args.argc) {
-                        if (!strcmp(args.argv[i], "localhost")) args.argv[i] = "127.0.0.1"; /* Permitir al cliente indicar localhost como IP */
+                    if (++i < args.argc)
+                    {
+                        if (!strcmp(args.argv[i], "localhost"))
+                        { args.argv[i] = "127.0.0.1"; } /* Permitir al cliente indicar localhost como IP */
                         strncpy(args.server_ip, args.argv[i], INET_ADDRSTRLEN);
                         set_ip = 1;
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "IP no especificada tras la opción '-i'\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
                     }
                     break;
                 case 'p':   /* Puerto */
-                    if (++i < args.argc) {
+                    if (++i < args.argc)
+                    {
                         *args.server_port = atoi(args.argv[i]);
-                        if (*args.server_port < 0) {
+                        if (*args.server_port < 0)
+                        {
                             fprintf(stderr, "El valor de puerto especificado (%s) no es válido.\n\n", args.argv[i]);
                             print_help(args.argv[0]);
                             exit(EXIT_FAILURE);
                         }
                         set_port = 1;
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "Puerto no especificado tras la opción '-p'.\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
                     }
                     break;
                 case 'f':   /* Fichero */
-                    if (++i < args.argc) {
+                    if (++i < args.argc)
+                    {
                         strncpy(args.input_file_name, args.argv[i], FILENAME_LEN);
                         set_file = 1;
-                    } else {
+                    } else
+                    {
                         fprintf(stderr, "Fichero no especificado tras la opción '-f'\n\n");
                         print_help(args.argv[0]);
                         exit(EXIT_FAILURE);
@@ -214,16 +277,21 @@ static void process_args(struct arguments args) {
                     print_help(args.argv[0]);
                     exit(EXIT_FAILURE);
             }
-        } else if (i == 1) {    /* Se especificó el fichero como primer argumento */
+        } else if (i == 1)
+        {    /* Se especificó el fichero como primer argumento */
             strncpy(args.input_file_name, args.argv[i], FILENAME_LEN);
             set_file = 1;
-        } else if (i == 2) {    /* Se especificó la IP como segundo argumento */
-            if (!strcmp(args.argv[i], "localhost")) args.argv[i] = "127.0.0.1"; /* Permitir al cliente indicar localhost como IP */
+        } else if (i == 2)
+        {    /* Se especificó la IP como segundo argumento */
+            if (!strcmp(args.argv[i], "localhost"))
+            { args.argv[i] = "127.0.0.1"; } /* Permitir al cliente indicar localhost como IP */
             strncpy(args.server_ip, args.argv[i], INET_ADDRSTRLEN);
             set_ip = 1;
-        } else if (i == 3) {    /* Se especificó el puerto como tercer argumento */
+        } else if (i == 3)
+        {    /* Se especificó el puerto como tercer argumento */
             *args.server_port = atoi(args.argv[i]);
-            if (*args.server_port < 0) {
+            if (*args.server_port < 0)
+            {
                 fprintf(stderr, "El valor de puerto especificado (%s) no es válido.\n\n", args.argv[i]);
                 print_help(args.argv[0]);
                 exit(EXIT_FAILURE);
@@ -232,10 +300,11 @@ static void process_args(struct arguments args) {
         }
     }
 
-    if (!set_file || !set_ip || !set_port) {
+    if (!set_file || !set_ip || !set_port)
+    {
         fprintf(stderr, "%s%s%s\n", (set_file ? "" : "No se especificó fichero para convertir a mayúsculas.\n"),
-                                    (set_ip ? "" : "No se especificó la IP del servidor al que conectarse.\n"), 
-                                    (set_port ? "" : "No se especificó el puerto del servidor al que conectarse.\n"));
+                (set_ip ? "" : "No se especificó la IP del servidor al que conectarse.\n"),
+                (set_port ? "" : "No se especificó el puerto del servidor al que conectarse.\n"));
         print_help(args.argv[0]);
         exit(EXIT_FAILURE);
     }

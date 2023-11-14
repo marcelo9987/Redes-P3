@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <stdio.h>
 
 /**
  * Estructura que contiene toda la información relevante 
