@@ -52,7 +52,7 @@ static void print_help(char *exe_name);
 
 
 /***** TODO: comentar **/
-void handle_data(Host self, Host *other);
+void handle_data(Host self);
 
 
 
@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
 void handle_data(Host self) {
     ssize_t received_bytes = 0;
     char received_messsage[MAX_BYTES_RECVFROM];
+    char sender_ip[INET_ADDRSTRLEN];
     struct sockaddr_in other_address;
     socklen_t size_addr = sizeof(struct sockaddr_in);
 
@@ -92,9 +93,9 @@ void handle_data(Host self) {
         fail("Error en la recepción del mensaje");
     }
 
+    printf("Han sido recibidos %lu bytes desde %s:%u\n", received_bytes, inet_ntop(self.domain, &other_address, sender_ip, INET_ADDRSTRLEN), ntohs(other_address.sin_port));
     printf("Mensaje recibido : %s\n", received_messsage);
-    printf("Han sido recibidos %ld bytes.\n", received_bytes);
-    log_printf(self.log, "Mensaje recibido : %s\tHan sido recibidos %ld bytes.\n", received_messsage, received_bytes);
+    log_printf(self.log, "Han sido recibidos %lu bytes desde %s:%u.\n", received_bytes, sender_ip, ntohs(other_address.sin_port));
 }
 
 

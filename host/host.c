@@ -94,7 +94,7 @@ Host create_own_host(int domain, int type, int protocol, uint16_t port, char* lo
     
     printf( "Host creado con éxito.\n"
             "Hostname: %s; IP: %s; Puerto: %d\n\n", host.hostname, host.ip, host.port);
-    log_printf(host.log, "Host creado con éxito.\tHostname: %s; IP: %s; Puerto: %d\n\n", host.hostname, host.ip, host.port);
+    log_printf(host.log, "Host creado con éxito.\tHostname: %s; IP: %s; Puerto: %d\n", host.hostname, host.ip, host.port);
 
     return host;
 }
@@ -154,7 +154,7 @@ Host create_remote_host(int domain, int type, int protocol, char* ip, uint16_t p
  * @param host  Host a cerrar.
  */
 void close_host(Host* host) {
-    log_printf(host->log, "Cerrando el host...\n");
+    log_printf(host->log, "Cerrando host...\n");
     /* Cerrar el socket del host */
     if (host->socket >= 0) {
         if (close(host->socket)) {
