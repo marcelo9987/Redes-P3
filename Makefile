@@ -72,11 +72,11 @@ OUT_MAYUS_CLIENT = $(SRC_MAYUS_CLIENT_SPECIFIC:.c=)
 OUT = $(OUT_BASIC_TRANSMITTER) $(OUT_BASIC_RECEIVER) $(OUT_MAYUS_SERVER) $(OUT_MAYUS_CLIENT)
 
 # # Servidor remoto al que subir los archivos relacionados con servidores
-# REMOTE_HOST = debian-server
-# REMOTE_USER = pedro
-# REMOTE_DIR = ~/ServidorRedes
-# REMOTE_SRC_DIR = $(REMOTE_DIR)/src
-# REMOTE_HEADERS_DIR = $(REMOTE_SRC_DIR)/server
+REMOTE_HOST = debian-server
+REMOTE_USER = pedro
+REMOTE_DIR = ~/ServidorUDP
+REMOTE_SRC_DIR = $(REMOTE_DIR)/src
+REMOTE_HEADERS_DIR = $(REMOTE_SRC_DIR)/host
 
 
 ############
@@ -120,8 +120,8 @@ clean: cleanobj
 cleanobj:
 	find . -name "*.o" -delete
 
-# deploy:
-# 	scp $(HEADERS) $(COMMON) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_HEADERS_DIR)
-# 	scp $(SRC_BASIC_TRANSMITTER_SPECIFIC) $(SRC_MAYUS_SERVER_SPECIFIC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_SRC_DIR)
-# 	ssh $(REMOTE_USER)@$(REMOTE_HOST) make --directory=$(REMOTE_DIR)
+deploy:
+	scp $(HEADERS) $(COMMON) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_HEADERS_DIR)
+	scp $(SRC_BASIC_TRANSMITTER_SPECIFIC) $(SRC_MAYUS_SERVER_SPECIFIC) $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_SRC_DIR)
+	ssh $(REMOTE_USER)@$(REMOTE_HOST) make --directory=$(REMOTE_DIR)
 
