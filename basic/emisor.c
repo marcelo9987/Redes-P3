@@ -1,22 +1,25 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
 #include <string.h>
+#include <stdbool.h>
+#include <arpa/inet.h>
 
 #include "host.h"
 #include "loging.h"
+
 // --
 
-#define MESSAGE_SIZE 128
+#define MAX_MESSAGE_SIZE 1000
 
-#define DEFAULT_OWN_PORT 7000
-#define DEFAULT_RECEIVER_IP "127.0.0.1"
-#define DEFAULT_RECEIVER_PORT 8080
+#define DEFAULT_SENDER_PORT 8100
+#define IP_LOCALHOST "127.0.0.1"
+#define DEFAULT_RECEIVER_IP IP_LOCALHOST
+#define DEFAULT_RECEIVER_PORT 8200
+
 #define DEFAULT_LOG_FILE "emisor.log"
-//--
+
+// --
 
 /**
  * Estructura de datos para pasar a la función process_args.
@@ -24,14 +27,89 @@
  * y luego una cantidad variable de punteros a las variables que se quieran inicializar
  * a partir de la entrada del programa.
  */
-struct arguments {
-    int argc;
-    char** argv;
-    uint16_t* own_port;
-    uint16_t* receiver_port;
-    char** receiver_ip;
-    char** log_file;
+struct Arguments
+{
+    uint16_t sender_port;
+    char *remote_ip;
+    uint16_t remote_port;
+    char *logfile;
 };
+
+enum Option
+{
+    OPT_NO_OPTION = '~',
+    OPT_OPTION_FLAG = '-',
+    OPT_SOURCE_PORT = 'o',
+    OPT_RECEIVER_IP = 'i',
+    OPT_RECEIVER_PORT = 'p',
+    OPT_LOG_FILE_NAME = 'l',
+    OPT_NO_LOG = 'n',
+    OPT_HELP = 'h'
+};
+
+// --
+
+/**
+ * @brief   Imprime la ayuda del programa
+ *
+ * @param exe_name  Nombre del ejecutable (argv[0])
+ */
+static void print_help(char *exe_name)
+{
+    printf("\n");
+
+    /** Cabecera y modo de ejecución **/
+    printf("Modo de uso: %s [...opciones]\n", exe_name);
+    printf("     o bien: %s <origen> [ <ip> [<puerto>] ] [...opciones]\n", exe_name);
+    printf("     o bien: %s [-o <origen>] [-i <ip>] [-p <puerto>] [...opciones]\n", exe_name);
+
+    printf("\n");
+
+    printf("Ejemplos de uso: Las tres siguientes ejecuciones son equivalentes:\n");
+    printf("  $ %s # Tomará los parámetros por defecto\n", exe_name);
+    printf("  $ %s %d %s %d\n", exe_name, DEFAULT_SENDER_PORT, DEFAULT_RECEIVER_IP, DEFAULT_RECEIVER_PORT);
+    printf("  $ %s -o %d -i %s -p %d\n", exe_name, DEFAULT_SENDER_PORT, DEFAULT_RECEIVER_IP, DEFAULT_RECEIVER_PORT);
+
+    printf("\n");
+
+    /** Lista de parámetros "importantes" **/
+    printf("Parámetros \tParámetro largo \tPor defecto \tDescripción\n");
+
+    printf("  -o <origen>\t--origen <puerto_org> \t%d \t\tPuerto desde donde se enviará el mensaje.\n", DEFAULT_SENDER_PORT);
+    printf("  -i <ip>\t--ip <ip_dest>\t\t%s \tIP del receptor del mensaje.\n", DEFAULT_RECEIVER_IP);
+    printf("  -p <puerto>\t--puerto <puerto_dest>\t%d \t\tPuerto del receptor al que se enviará el mensaje.\n", DEFAULT_RECEIVER_PORT);
+
+    printf("\n");
+
+    /** Lista de opciones de uso **/
+    printf("Más opciones \tOpción larga \t\tPor defecto \tDescripción\n");
+
+    printf("  -l <log>\t--log <log>\t\t\"%s\" \tNombre del archivo en el que guardar el registro de actividad del emisor.\n", DEFAULT_LOG_FILE);
+    printf("  -n\t\t--no-log\t\t\t\tNo crear archivo de registro de actividad.\n");
+    printf("  -h\t\t--help\t\t\t\t\tMostrar este texto de ayuda y salir.\n");
+
+//  printf("\n");
+//
+//  /** Consideraciones adicionales **/
+//  printf("\n\nNota: Si se especifica varias veces un argumento, o se especifican las opciones \"--log\" y \"--no-log\" a la vez, el comportamiento está indefinido.\n\n");
+
+    printf("\n");
+}
+
+/***** TODO: comentar **/
+long getPortOrFail(char *argv[], int pos)
+{
+    long read_number = atol(argv[pos]);
+
+    if (read_number <= 0 || read_number > 65535)
+    {
+        fprintf(stderr, "ERROR: El valor de puerto especificado (%s) no es válido\n", argv[pos]);
+        print_help(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    return read_number;
+}
 
 /**
  * @brief   Procesa los argumentos del main
@@ -42,200 +120,204 @@ struct arguments {
  * @param args  Estructura con los argumentos del programa y punteros a las
  *              variables que necesitan inicialización.
  */
-static void process_args(struct arguments args);
+static void process_args(struct Arguments *args, int argc, char *argv[])
+{
+    bool allow_unnamed_basic_params = true;
 
-/**
- * @brief   Imprime la ayuda del programa
- *
- * @param exe_name  Nombre del ejecutable (argv[0])
- */
-static void print_help(char* exe_name);
+    enum Option next_unnamed_basic_param = OPT_SOURCE_PORT; // 'o'
+
+    for (int pos = 1; pos < argc; pos++)
+    {
+        enum Option current_option = OPT_NO_OPTION;
+
+        /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
+        char *current_arg_str = argv[pos];
+        if (current_arg_str[0] == OPT_OPTION_FLAG) // '-'
+        {
+            allow_unnamed_basic_params = false;
+
+            /* Flag de opción */
+            current_option = (enum Option) current_arg_str[1];
+
+            /* Manejar las opciones largas */
+            if (current_option == OPT_OPTION_FLAG) // '-'
+            {
+                if (!strcmp(current_arg_str, "--origen"))
+                {
+                    current_option = OPT_SOURCE_PORT; // 'o'
+                } else if (!strcmp(current_arg_str, "--ip"))
+                {
+                    current_option = OPT_RECEIVER_IP; // 'i'
+                } else if (!strcmp(current_arg_str, "--puerto"))
+                {
+                    current_option = OPT_RECEIVER_PORT; // 'p'
+                } else if (!strcmp(current_arg_str, "--log"))
+                {
+                    current_option = OPT_LOG_FILE_NAME; // 'l'
+                } else if (!strcmp(current_arg_str, "--no-log"))
+                {
+                    current_option = OPT_NO_LOG; // 'n'
+                } else if (!strcmp(current_arg_str, "--help"))
+                {
+                    current_option = OPT_HELP; // 'h'
+                }
+            }
+        } else if (allow_unnamed_basic_params)
+        {
+            switch (next_unnamed_basic_param)
+            {
+                case OPT_SOURCE_PORT: // 'o'
+                    current_option = OPT_SOURCE_PORT; // 'o'
+                    next_unnamed_basic_param = OPT_RECEIVER_IP;
+                    --pos;
+                    break;
+                case OPT_RECEIVER_IP: // 'i'
+                    current_option = OPT_RECEIVER_IP; // 'i'
+                    next_unnamed_basic_param = OPT_RECEIVER_PORT;
+                    --pos;
+                    break;
+                case OPT_RECEIVER_PORT: // 'p'
+                    current_option = OPT_RECEIVER_PORT; // 'p'
+                    next_unnamed_basic_param = OPT_NO_OPTION;
+                    --pos;
+                    break;
+                default:
+                    fprintf(stderr, "ERROR: Se ha recibido un parámetro (%s) no esperado\n", argv[pos]);
+                    print_help(argv[0]);
+                    exit(EXIT_FAILURE);
+            }
+
+        }
+
+//        printf("current_option: %c \"%s\"\n", current_option, argv[pos+1]);
+
+        switch (current_option)
+        {
+            case OPT_SOURCE_PORT: // 'o' /* Puerto Emisor */
+                if (++pos < argc)
+                {
+                    args->sender_port = getPortOrFail(argv, pos);
+                } else
+                {
+                    fprintf(stderr, "ERROR: Puerto no especificado tras la opción '-o'\n");
+                    print_help(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+
+            case OPT_RECEIVER_IP: // 'i' /* IP Receptor */
+                if (++pos < argc)
+                {
+                    if (!strcmp(argv[pos], "localhost"))
+                    {
+                        // Permitimos al cliente indicar localhost como IP
+                        args->remote_ip = IP_LOCALHOST;
+                    } else
+                    {
+                        args->remote_ip = argv[pos];
+                    }
+                }
+                break;
+
+            case OPT_RECEIVER_PORT: // 'p' /* Puerto Receptor */
+                if (++pos < argc)
+                {
+                    args->remote_port = getPortOrFail(argv, pos);
+                } else
+                {
+                    fprintf(stderr, "ERROR: Puerto no especificado tras la opción '-p'\n");
+                    print_help(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+
+            case OPT_LOG_FILE_NAME: // 'l' /* Log */
+                if (++pos < argc)
+                {
+                    args->logfile = argv[pos];
+                } else
+                {
+                    fprintf(stderr, "ERROR: Nombre del log no especificado tras la opción '-l'\n");
+                    print_help(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+
+            case OPT_NO_LOG: // 'n' /* No-log */
+                args->logfile = NULL;
+                break;
+
+            case OPT_HELP: // 'h' /* Ayuda */
+                print_help(argv[0]);
+                exit(EXIT_SUCCESS);
+
+            default:
+                fprintf(stderr, "ERROR: Opción '%s' desconocida\n", current_arg_str);
+                print_help(argv[0]);
+                exit(EXIT_FAILURE);
+        }
+
+    }
+
+}
+
+// ==
+
+/***** TODO: comentar **/
+static void send_message(Host *sender, Host *remote)
+{
+    log_and_stdout_printf(sender->log, "Puerto del emisor   : %d UDP\n", sender->port);
+    log_and_stdout_printf(sender->log, "IP     del receptor : %s\n", inet_ntoa(remote->address.sin_addr));
+    log_and_stdout_printf(sender->log, "Puerto del receptor : %d UDP\n", ntohs(remote->address.sin_port));
+
+    // --
+
+    char message_to_send[MAX_MESSAGE_SIZE];
+    sprintf(message_to_send, "El host %s en %s:%u te saluda.\n", sender->hostname, sender->ip, sender->port);
 
 
-/**** TODO: documentar */
-void send_message(Host own, Host remote);
+    // Enviamos el mensaje al cliente
+    ssize_t sent_bytes = sendto(sender->socket, message_to_send, strlen(message_to_send), /*__flags*/ 0, (struct sockaddr *) &remote->address, sizeof(remote->address));
 
-// --
-int main(int argc, char** argv) {
-    Host self;
-    Host other;
-    uint16_t own_port, receiver_port;
-    char* log_file;
-    char* receiver_ip;
-    struct arguments args = {
-            .argc = argc,
-            .argv = argv,
-            .own_port = &own_port,
-            .receiver_port = &receiver_port,
-            .receiver_ip = &receiver_ip,
-            .log_file = &log_file,
-    };
+    // --
 
+    if (sent_bytes == -1)
+    {
+        log_printf_err(sender->log, "ERROR: Se produjo un error cuando se intentaba enviar el mensaje\n");
+        fail("ERROR: Se produjo un error cuando se intentaba enviar el mensaje");
+    }
+
+    // --
+
+    log_and_stdout_printf(sender->log, "Mensaje enviado     : \"%s\"\n", message_to_send);
+    log_and_stdout_printf(sender->log, "Bytes enviados      : %ld\n", sent_bytes);
+
+}
+
+// ==
+
+int main(int argc, char *argv[])
+{
     set_colors();
 
-    process_args(args);
+    /* Inicializar los parámetros a sus valores por defecto */
+    struct Arguments args = {
+            .sender_port = DEFAULT_SENDER_PORT,
+            .remote_ip = DEFAULT_RECEIVER_IP,
+            .remote_port = DEFAULT_RECEIVER_PORT,
+            .logfile = DEFAULT_LOG_FILE
+    };
 
-    self = create_own_host(AF_INET, SOCK_DGRAM, 0, own_port, log_file);
+    process_args(&args, argc, argv);
 
-    other = create_remote_host(AF_INET, SOCK_DGRAM, 0, receiver_ip, receiver_port);
+    Host sender = create_own_host(AF_INET, SOCK_DGRAM, 0, args.sender_port, args.logfile);
 
-    send_message(self, other);
+    Host remote = create_remote_host(AF_INET, SOCK_DGRAM, 0, args.remote_ip, args.remote_port);
 
-    close_host(&self);
-    close_host(&other);
+    send_message(&sender, &remote);
+
+    close_host(&sender);
+    close_host(&remote);
 
     return 0;
 }
-
-
-void send_message(Host own, Host remote) {
-    char message[MESSAGE_SIZE] = {0};
-    ssize_t sent_bytes;
-
-    printf("\nEnviando mensaje al receptor %s:%u...\n", remote.ip, remote.port);
-    log_printf(own.log, "Enviando mensaje al receptor %s:%u...\n", remote.ip, remote.port);
-
-    snprintf(message, MESSAGE_SIZE, "El host %s en %s:%u te saluda.\n", own.hostname, own.ip, own.port);
-
-    /* Enviar el mensaje al cliente */
-    if ( (sent_bytes = sendto(own.socket, message, strlen(message) + 1, 0, (struct sockaddr *) &remote.address, sizeof(remote.address))) < 0) {
-        log_printf_err(own.log, "No se pudo enviar el mensaje\n");
-        fail("No se pudo enviar el mensaje");
-    }
-
-
-    printf("Enviados %lu bytes en el mensaje para %s:%u.\n", sent_bytes, remote.ip, remote.port);
-    log_printf(own.log, "Enviados %lu bytes en el mensaje para %s:%u.\n", sent_bytes, remote.ip, remote.port);
-}
-
-
-static void print_help(char* exe_name) {
-    /** Cabecera y modo de ejecución **/
-    printf("Uso: %s [[-p] <port>] [[-i] <ip>] [[-r] <port>] [-l <log> | --no-log] [-h]\n\n", exe_name);
-
-    /** Lista de opciones de uso **/
-    printf(" Opción\t\tOpción larga\t\tSignificado\n");
-    printf(" -p <port>\t--port <port>\t\tPuerto por el que enviará mensajes el emisor.\n");
-    printf(" -i <ip>\t--ip <ip>\t\tIP del receptor al que enviar el mensaje.\n");
-    printf(" -r <port>\t--remote <port>\tPuerto del host remoto por el que enviar el mensaje.\n");
-    printf(" -l <log>\t--log <log>\t\tNombre del archivo en el que guardar el registro de actividad del emisor.\n");
-    printf(" -n\t\t--no-log\t\tNo crear archivo de registro de actividad.\n");
-    printf(" -h\t\t--help\t\t\tMostrar este texto de ayuda y salir.\n");
-
-    /** Consideraciones adicionales **/
-    printf("\nSi se especifica cualquiera de las opciones '-p', '-i' o '-r', deben especificarse también las demás con sus respectivos flags de opción.\n");
-    printf("\nPuede especificarse el parámetro <port> para el puerto por el que se comunica el emisor sin escribir la opción '-p', siempre y cuando este sea el primer parámetro que se pasa a la función. De igual forma, se pueden especificar la IP y puerto de destino sin escribir los flags '-i' ni '-r'.\n");
-    printf("\nSi no se especifica alguno de los argumentos, el servidor se ejecutará con sus valores por defecto, a saber: DEFAULT_OWN_PORT=%u; DEFAULT_RECEIVER_IP=%s; DEFAULT_RECEIVER_PORT=%u; DEFAULT_LOG_FILE=%s\n", DEFAULT_OWN_PORT, DEFAULT_RECEIVER_IP, DEFAULT_RECEIVER_PORT, DEFAULT_LOG_FILE);
-    printf("\nSi se especifica varias veces un argumento, o se especifican las opciones \"--log\" y \"--no-log\" a la vez, el comportamiento está indefinido.\n");
-}
-
-
-static void process_args(struct arguments args) {
-    int i;
-    char *current_arg;
-
-    /* Inicializar los valores de puertos, IP y log a sus valores por defecto */
-    *args.own_port = DEFAULT_OWN_PORT;
-    *args.receiver_port = DEFAULT_RECEIVER_PORT;
-    *args.receiver_ip = DEFAULT_RECEIVER_IP;
-    *args.log_file = DEFAULT_LOG_FILE;
-
-    for (i = 1; i < args.argc; i++) { /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
-        current_arg = args.argv[i];
-        if (current_arg[0] == '-') { /* Flag de opción */
-            /* Manejar las opciones largas */
-            if (current_arg[1] == '-') { /* Opción larga */
-                if (!strcmp(current_arg, "--IP") || !strcmp(current_arg, "--ip"))
-                { current_arg = "-i"; }
-                if (!strcmp(current_arg, "--port"))
-                { current_arg = "-p"; }
-                else if (!strcmp(current_arg, "--remote"))
-                { current_arg = "-r"; }
-                else if (!strcmp(current_arg, "--log"))
-                { current_arg = "-l"; }
-                else if (!strcmp(current_arg, "--no-log"))
-                { current_arg = "-n"; }
-                else if (!strcmp(current_arg, "--help"))
-                { current_arg = "-h"; }
-            }
-            switch (current_arg[1]) {
-                case 'p':   /* Puerto propio */
-                    if (++i < args.argc) {
-                        *args.own_port = atoi(args.argv[i]);
-                        if (*args.own_port < 0) {
-                            fprintf(stderr, "El valor de puerto propio especificado (%s) no es válido.\n\n", args.argv[i]);
-                            print_help(args.argv[0]);
-                            exit(EXIT_FAILURE);
-                        }
-                    } else {
-                        fprintf(stderr, "Puerto no especificado tras la opción '-p'.\n\n");
-                        print_help(args.argv[0]);
-                        exit(EXIT_FAILURE);
-                    }
-                    break;
-                case 'I':   /* IP */
-                case 'i':
-                    if (++i < args.argc) {
-                        if (!strcmp(args.argv[i], "localhost")) args.argv[i] = "127.0.0.1";  /* Permitir al usuario indicar localhost como IP */
-                        *args.receiver_ip = args.argv[i];
-                    } else {
-                        fprintf(stderr, "IP no especificada tras la opción '-i'.\n\n");
-                        print_help(args.argv[0]);
-                        exit(EXIT_FAILURE);
-                    }
-                    break;
-                case 'r':   /* Puerto remoto */
-                    if (++i < args.argc) {
-                        *args.receiver_port = atoi(args.argv[i]);
-                        if (*args.receiver_port < 0) {
-                            fprintf(stderr, "El valor de puerto remoto especificado (%s) no es válido.\n\n", args.argv[i]);
-                            print_help(args.argv[0]);
-                            exit(EXIT_FAILURE);
-                        }
-                    } else {
-                        fprintf(stderr, "Puerto no especificado tras la opción '-r'.\n\n");
-                        print_help(args.argv[0]);
-                        exit(EXIT_FAILURE);
-                    }
-                    break;
-                case 'l':   /* Log */
-                    if (++i < args.argc) {
-                        *args.log_file = args.argv[i];
-                    } else {
-                        fprintf(stderr, "Nombre del log no especificado tras la opción '-l'.\n\n");
-                        print_help(args.argv[0]);
-                        exit(EXIT_FAILURE);
-                    }
-                    break;
-                case 'n':   /* No-log */
-                    *args.log_file = NULL;
-                    break;
-                case 'h':   /* Ayuda */
-                    print_help(args.argv[0]);
-                    exit(EXIT_SUCCESS);
-                default:
-                    fprintf(stderr, "Opción '%s' desconocida\n\n", current_arg);
-                    print_help(args.argv[0]);
-                    exit(EXIT_FAILURE);
-            }
-        } else if (i == 1) {    /* Se especificó el puerto propio como primer argumento */
-            *args.own_port = atoi(args.argv[i]);
-            if (*args.own_port < 0) {
-                fprintf(stderr, "El valor de puerto propio especificado como primer argumento (%s) no es válido.\n\n", args.argv[i]);
-                print_help(args.argv[0]);
-                exit(EXIT_FAILURE);
-            }
-        } else if (i == 2) {    /* Se especificó la IP del destinatario como segundo argumento */
-            if (!strcmp(args.argv[i], "localhost")) args.argv[i] = "127.0.0.1";  /* Permitir al usuario indicar localhost como IP */
-            *args.receiver_ip = args.argv[i];
-        } else if (i == 3) {    /* Se especificón el puerto del destinatario como tercer argumento */
-            *args.receiver_port = atoi(args.argv[i]);
-            if (*args.receiver_port < 0) {
-                fprintf(stderr, "El valor de puerto remoto especificado como tercer argumento (%s) no es válido.\n\n", args.argv[i]);
-                print_help(args.argv[0]);
-                exit(EXIT_FAILURE);
-            }
-        }
-    }
-}
-

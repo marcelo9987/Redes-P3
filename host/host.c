@@ -131,7 +131,7 @@ Host create_remote_host(int domain, int type, int protocol, char* ip, uint16_t p
     };
 
     if (inet_pton(remote.domain, ip, &(remote.address.sin_addr)) != 1) { /* La string no se pudo traducir a una IP válida */
-        fprintf(stderr, "La IP especificada no es válida\n\n");
+        fprintf(stderr, "La IP especificada (%s) no es válida\n\n", ip);
         exit(EXIT_FAILURE);
     }
 
