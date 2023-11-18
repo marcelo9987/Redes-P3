@@ -6,14 +6,15 @@
 #include <stdbool.h>
 #include <arpa/inet.h>
 
-#include "host.h"
-#include "loging.h"
+#include "../host/host.h"
+#include "../host/loging.h"
+
 
 // --
 
-#define DEFAULT_RECEIVER_PORT 8200
+#define DEFAULT_MAX_BYTES_RECV 1000
 
-#define DEFAULT_MAX_BYTES_RECVFROM 1000
+#define DEFAULT_RECEIVER_PORT 8200
 
 #define DEFAULT_LOG_FILE "receptor.log"
 
@@ -34,7 +35,7 @@ struct Arguments
 
 enum Option
 {
-    OPT_NO_OPTION = 0,
+    OPT_NO_OPTION = '~',
     OPT_OPTION_FLAG = '-',
     OPT_RECEIVER_PORT = 'p',
     OPT_MAX_BYTES_TO_READ = 'b',
@@ -73,7 +74,7 @@ static void print_help(char *exe_name)
     printf("Parámetros \tParámetro largo \tPor defecto \tDescripción\n");
 
     printf("  -p <puerto>\t--puerto <puerto>\t%d\t\tPuerto en el que se espera recibir el mensaje.\n", DEFAULT_RECEIVER_PORT);
-    printf("  -b <bytes>\t--max-bytes <bytes>\t%d\t\tBytes máximos a leer por recvfrom (para el apartado c).\n", DEFAULT_MAX_BYTES_RECVFROM);
+    printf("  -b <bytes>\t--max-bytes <bytes>\t%d\t\tBytes máximos a leer por recvfrom (para el apartado c).\n", DEFAULT_MAX_BYTES_RECV);
 
     printf("\n");
 
@@ -144,11 +145,11 @@ static void process_args(struct Arguments *args, int argc, char *argv[])
 
     enum Option next_unnamed_basic_param = OPT_RECEIVER_PORT; // 'p'
 
+    /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
     for (int pos = 1; pos < argc; pos++)
     {
         enum Option current_option = OPT_NO_OPTION;
 
-        /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
         char *current_arg_str = argv[pos];
         if (current_arg_str[0] == OPT_OPTION_FLAG) // '-'
         {
@@ -305,7 +306,7 @@ int main(int argc, char *argv[])
     /* Inicializar los parámetros a sus valores por defecto */
     struct Arguments args = {
             .receiver_port = DEFAULT_RECEIVER_PORT,
-            .max_bytes_to_read = DEFAULT_MAX_BYTES_RECVFROM,
+            .max_bytes_to_read = DEFAULT_MAX_BYTES_RECV,
             .logfile = DEFAULT_LOG_FILE
     };
 

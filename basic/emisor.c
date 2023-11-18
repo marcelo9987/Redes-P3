@@ -5,8 +5,8 @@
 #include <stdbool.h>
 #include <arpa/inet.h>
 
-#include "host.h"
-#include "loging.h"
+#include "../host/host.h"
+#include "../host/loging.h"
 
 // --
 
@@ -29,7 +29,7 @@
  */
 struct Arguments
 {
-    uint16_t sender_port;
+    uint16_t local_port;
     char *remote_ip;
     uint16_t remote_port;
     char *logfile;
@@ -196,7 +196,7 @@ static void process_args(struct Arguments *args, int argc, char *argv[])
             case OPT_SOURCE_PORT: // 'o' /* Puerto Emisor */
                 if (++pos < argc)
                 {
-                    args->sender_port = getPortOrFail(argv, pos);
+                    args->local_port = getPortOrFail(argv, pos);
                 } else
                 {
                     fprintf(stderr, "ERROR: Puerto no especificado tras la opción '-o'\n");
@@ -261,7 +261,7 @@ static void process_args(struct Arguments *args, int argc, char *argv[])
 
 }
 
-// ==
+// --
 
 /***** TODO: comentar **/
 static void send_message(Host *sender, Host *remote)
@@ -294,7 +294,7 @@ static void send_message(Host *sender, Host *remote)
 
 }
 
-// ==
+// --
 
 int main(int argc, char *argv[])
 {
@@ -302,7 +302,7 @@ int main(int argc, char *argv[])
 
     /* Inicializar los parámetros a sus valores por defecto */
     struct Arguments args = {
-            .sender_port = DEFAULT_SENDER_PORT,
+            .local_port = DEFAULT_SENDER_PORT,
             .remote_ip = DEFAULT_RECEIVER_IP,
             .remote_port = DEFAULT_RECEIVER_PORT,
             .logfile = DEFAULT_LOG_FILE
@@ -310,7 +310,7 @@ int main(int argc, char *argv[])
 
     process_args(&args, argc, argv);
 
-    Host sender = create_own_host(AF_INET, SOCK_DGRAM, 0, args.sender_port, args.logfile);
+    Host sender = create_own_host(AF_INET, SOCK_DGRAM, 0, args.local_port, args.logfile);
 
     Host remote = create_remote_host(AF_INET, SOCK_DGRAM, 0, args.remote_ip, args.remote_port);
 
