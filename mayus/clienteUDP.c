@@ -186,6 +186,9 @@ void handle_data(Host *local_client, Host *remote_server, char *input_file_name)
 
     /* Procesamiento y envÍo del archivo */
     while (!feof(fp_input)) {
+        /*** < CAMBIO PARA EL EJERCUCIO 3 > ***/
+        sleep(1);
+        /*** </ CAMBIO PARA EL EJERCICIO 3 > ***/
         /* Leemos hasta que lo que devuelve getline es EOF */
         if (getline(&send_buffer, &buffer_size, fp_input) == EOF) {
             // Salimos del bucle. No hace falta avisar al servidor, porque no había ninguna conexión establecida.
