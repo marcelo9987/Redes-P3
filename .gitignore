@@ -58,3 +58,7 @@ dkms.conf
 # Log files
 log
 *.log
+
+# Text files
+*.txt
+*.TXT

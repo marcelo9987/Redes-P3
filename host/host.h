@@ -23,6 +23,13 @@ typedef struct {
     FILE* log;      /* Archivo en el que guardar el registro de actividad del servidor */
 } Host;
 
+/** 
+ * Variables globales para el manejo de señales.
+ */
+extern uint8_t socket_io_pending;   /* Contiene el número de eventos de entrada/salida pendientes de manejar en el socket del host. 
+                                     * Su uso permite que el host no se quede bloqueado en el proceso de espera de señales, pero que aún así pueda pausarse
+                                     * para no gastar recursos de forma innecesaria */
+extern uint8_t terminate;           /* Vale 1 si llegó una señal de terminación (SIGINT o SIGTERM). En este caso se espera que el proceso termine limpiamente. */
 
 /**
  * @brief   Crea un host del propio programa.

@@ -16,6 +16,35 @@
 
 #define BUFFER_LEN 128
 
+/** Variables globales que exportar en el fichero de cabecera para el manejo de señales */
+uint8_t socket_io_pending;
+uint8_t terminate;
+
+
+/**
+ * @brief   Maneja las señales que recibe el host
+ *
+ * Maneja las señales de SIGIO, SIGINT y SIGTERM que puede recibir el servidor durante su ejecución.
+ *  - SIGIO: tuvo lugar un evento de I/O en el socket del servidor.
+ *  - SIGINT, SIGTERM: terminar la ejecución del programa segura.
+ * Establece los valores de las variables globales socket_io_pending y terminate apropiadamente.
+ *
+ *  @param signum   Número de señal recibida.
+ */
+static void signal_handler(int signum) {
+    switch (signum) {
+        case SIGIO:
+            socket_io_pending++;    /* Aumentar en 1 el número de eventos de entrada/salida pendientes */
+            break;
+        case SIGINT:
+        case SIGTERM:
+            terminate = 1;          /* Marca que el programa debe terminar */
+            break;
+        default:
+            break;
+    }
+}
+
 
 /**
  * @brief   Crea un host del propio programa.
@@ -91,7 +120,31 @@ Host create_own_host(int domain, int type, int protocol, uint16_t port, char* lo
         log_printf_err(host.log, "Error al asignar la dirección (bind) del socket del host.\n");
         fail("No se pudo asignar dirección IP");
     }
+
+    /* Configurar el host para enviarse a sí mismo un SIGIO cuando se produzca actividad en el socket, para evitar bloqueos esperando por conexiones */
+    if (fcntl(host.socket, F_SETFL, O_ASYNC | O_NONBLOCK) < 0) {
+        log_printf_err(host.log, "Error al configurar el envío de SIGIO en el socket.\n");
+        fail("No se pudo configurar el envío de SIGIO en el socket");
+    }
+    if (fcntl(host.socket, F_SETOWN, getpid()) < 0) {
+        log_printf_err(host.log, "Error al configurar el autoenvío de señales en el socket.\n");
+        fail("No se pudo configurar el autoenvío de señales en el socket");
+    }
+
+    if (signal(SIGIO, signal_handler) == SIG_ERR) {
+        log_printf_err(host.log, "Error al establecer el manejo de la señal SIGIO.\n");
+        fail("No se pudo establecer el manejo de la señal SIGIO");
+    }
+    if (signal(SIGINT, signal_handler) == SIG_ERR) {
+        log_printf_err(host.log, "Error al establecer el manejo de la señal SIGINT.\n");
+        fail("No se pudo establecer el manejo de la señal SIGINT");
+    }
+    if (signal(SIGTERM, signal_handler) == SIG_ERR) {
+        log_printf_err(host.log, "Error al establecer el manejo de la señal SIGTERM.\n");
+        fail("No se pudo establecer el manejo de la señal SIGTERM");
+    }
     
+
     printf( "Host creado con éxito.\n"
             "Hostname: %s; IP: %s; Puerto: %d\n\n", host.hostname, host.ip, host.port);
     log_printf(host.log, "Host creado con éxito.\tHostname: %s; IP: %s; Puerto: %d\n", host.hostname, host.ip, host.port);
