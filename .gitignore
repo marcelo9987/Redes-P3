@@ -62,3 +62,6 @@ log
 # Text files
 *.txt
 *.TXT
+
+# IDEs
+/.idea
