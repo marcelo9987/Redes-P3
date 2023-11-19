@@ -217,7 +217,7 @@ void handle_data(Host *local_client, Host *remote_server, char *input_file_name)
         }
 
         /* Enviamos la línea */
-        printf("\nEnviando: <<%s>>\n", input_file_name);
+        printf("\nEnviando: <<%s>>\n", send_buffer);
 
         sent_bytes = sendto(local_client->socket, send_buffer, strlen(send_buffer) + 1, 0, (struct sockaddr *) &(remote_server->address), socket_addr_len);
         if (sent_bytes < 0) {
