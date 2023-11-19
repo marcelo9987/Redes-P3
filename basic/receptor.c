@@ -128,11 +128,11 @@ int main(int argc, char **argv) {
     log_and_stdout_printf(local_receiver.log, "IP pública del receptor : %s\n", local_receiver.public_ip);
     log_and_stdout_printf(local_receiver.log, "Máximo de bytes a leer  : %ld (apartado c)\n", args.max_bytes_to_read);
 
+    log_and_stdout_printf(local_receiver.log, "\n==============================\n");
+
+    log_and_stdout_printf(local_receiver.log, "Escuchando en el puerto : %d UDP...\n", local_receiver.port);
+
     while (!terminate) {
-
-        log_and_stdout_printf(local_receiver.log, "\n==============================\n");
-
-        log_and_stdout_printf(local_receiver.log, "Escuchando en el puerto : %d UDP...\n", local_receiver.port);
 
         if (!socket_io_pending) {
             /* Pausamos la ejecución hasta que se reciba una señal de I/O o de terminación */
@@ -146,15 +146,15 @@ int main(int argc, char **argv) {
 
         if (received_bytes == -1) {
             /* Falsa alarma, no había mensajes pendientes o se recibió una señal de terminación */
-            log_and_stdout_printf(local_receiver.log, "Falsa alarma, no había mensajes pendientes o se recibió una señal de terminación\n");
+//            log_and_stdout_printf(local_receiver.log, "Falsa alarma, no había mensajes pendientes o se recibió una señal de terminación\n");
             continue;
         }
 
-        if (received_bytes == args.max_bytes_to_read) {
-            log_and_stdout_printf(local_receiver.log, "Como hemos recibido el máximo de bytes (%ld), es posible que haya más datos pendientes de recibir.\n", received_bytes);
-            log_and_stdout_printf(local_receiver.log, "Volvamos a llamar a recvfrom()...\n\n");
-            continue;
-        }
+//        if (received_bytes == args.max_bytes_to_read) {
+//            log_and_stdout_printf(local_receiver.log, "Como hemos recibido el máximo de bytes (%ld), es posible que haya más datos pendientes de recibir.\n", received_bytes);
+//            log_and_stdout_printf(local_receiver.log, "Volvamos a llamar a recvfrom()...\n\n");
+//            continue;
+//        }
 
         terminate = true;  /* Ya hemos recibido un mensaje completo, por lo que podemos terminar */
     };
@@ -173,33 +173,52 @@ static ssize_t handle_message(Host *local_receiver, size_t max_bytes_to_read) {
     char received_message[max_bytes_to_read + 1];
     struct sockaddr_in remote_connection_info;
     ssize_t received_bytes;
+    ssize_t total_received_bytes = 0;
     socklen_t addr_len = sizeof(struct sockaddr_in);
 
+    while (true) {
 //    received_bytes = recvfrom(local_receiver->socket, received_message, MAX_BYTES_RECVFROM, 0, (struct sockaddr *) &(remote_connection_info), &addr_len);
-    received_bytes = recvfrom(local_receiver->socket, received_message, max_bytes_to_read, 0, (struct sockaddr *) &(remote_connection_info), &addr_len);
+        received_bytes = recvfrom(local_receiver->socket, received_message, max_bytes_to_read, 0, (struct sockaddr *) &(remote_connection_info), &addr_len);
 
-    if (received_bytes == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            /* Hemos marcado al socket con O_NONBLOCK; no hay mensajes pendientes, así que lo registramos y salimos */
-            socket_io_pending = 0;
-            return received_bytes;
+        if (received_bytes == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (total_received_bytes > 0) {
+                    log_and_stdout_printf(local_receiver->log, "    Falsa alarma, no había mensajes pendientes o se recibió una señal de terminación\n");
+                    return total_received_bytes;
+                }
+
+                /* Hemos marcado al socket con O_NONBLOCK; no hay mensajes pendientes, así que lo registramos y salimos */
+                socket_io_pending--;
+                return received_bytes;
+            }
+
+            log_printf_err(local_receiver->log, "ERROR: Se produjo un error en la recepción del mensaje\n");
+            fail("ERROR: Se produjo un error en la recepción del mensaje");
         }
 
-        log_printf_err(local_receiver->log, "ERROR: Se produjo un error en la recepción del mensaje\n");
-        fail("ERROR: Se produjo un error en la recepción del mensaje");
+        log_and_stdout_printf(local_receiver->log, "==============================\n");
+
+        received_message[received_bytes] = '\0';
+
+        log_and_stdout_printf(local_receiver->log, "Mensaje recibido  : \"%s\"\n", received_message);
+        log_and_stdout_printf(local_receiver->log, "Bytes recibidos   : %ld\n", received_bytes);
+        log_and_stdout_printf(local_receiver->log, "IP del emisor     : %s\n", inet_ntoa(remote_connection_info.sin_addr));
+        log_and_stdout_printf(local_receiver->log, "Puerto del emisor : %d UDP\n", ntohs(remote_connection_info.sin_port));
+
+        total_received_bytes += received_bytes;
+
+        if (received_bytes == max_bytes_to_read) {
+            log_and_stdout_printf(local_receiver->log, "    Como hemos recibido el máximo de bytes (%ld), es posible que haya más datos pendientes de recibir.\n", received_bytes);
+            log_and_stdout_printf(local_receiver->log, "    Volvamos a llamar (por si acaso) de nuevo a recvfrom()...\n\n");
+            continue;
+        } else {
+            socket_io_pending--;
+            break;
+        }
+
     }
 
-    log_and_stdout_printf(local_receiver->log, "==============================\n");
-
-    received_message[received_bytes] = '\0';
-
-    log_and_stdout_printf(local_receiver->log, "Mensaje recibido  : \"%s\"\n", received_message);
-    log_and_stdout_printf(local_receiver->log, "Bytes recibidos   : %ld\n", received_bytes);
-    log_and_stdout_printf(local_receiver->log, "IP del emisor     : %s\n", inet_ntoa(remote_connection_info.sin_addr));
-    log_and_stdout_printf(local_receiver->log, "Puerto del emisor : %d UDP\n", ntohs(remote_connection_info.sin_port));
-
-
-    return received_bytes;
+    return total_received_bytes;
 }
 
 

@@ -19,8 +19,8 @@
 #define BUFFER_LEN 2048
 
 /** Variables globales que exportar en el fichero de cabecera para el manejo de señales */
-uint8_t socket_io_pending;
-bool terminate;
+uint8_t socket_io_pending = 0;
+bool terminate = false;
 
 
 /**
@@ -34,6 +34,8 @@ bool terminate;
  *  @param signum   Número de señal recibida.
  */
 static void signal_handler(int signum) {
+    printf("\n! Recibida señal %d%s\n", signum, (signum == SIGIO ? " (SIGIO)" : ""));
+
     switch (signum) {
         case SIGIO:
             socket_io_pending++;    /* Aumentar en 1 el número de eventos de entrada/salida pendientes */
