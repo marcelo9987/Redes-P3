@@ -147,10 +147,11 @@ int main(int argc, char** argv) {
 
 
 static ssize_t handle_message(Host *self, size_t max_bytes_to_read) {
-    char received_message[max_bytes_to_read + 1];
+    float received_message[max_bytes_to_read + 1];
     struct sockaddr_in remote_connection_info;
     ssize_t received_bytes;
     socklen_t addr_len = sizeof(struct sockaddr_in);
+    int i;
 
 //    ssize_t received_bytes = recvfrom(self->socket, received_message, MAX_BYTES_RECVFROM, 0, (struct sockaddr *) &(remote_connection_info), &addr_len);
     received_bytes = recvfrom(self->socket, received_message, max_bytes_to_read, 0, (struct sockaddr *) &(remote_connection_info), &addr_len);
@@ -164,9 +165,11 @@ static ssize_t handle_message(Host *self, size_t max_bytes_to_read) {
         fail("ERROR: Se produjo un error en la recepción del mensaje");
     }
 
-    received_message[received_bytes] = '\0';
-
-    log_and_stdout_printf(self->log, "Mensaje recibido  : \"%s\"\n", received_message);
+    log_and_stdout_printf(self->log, "Mensaje recibido  : ");
+    for (i = 0; i < received_bytes / sizeof(float); i++) {
+        printf("%f; ", received_message[i]);
+    }
+    printf("\b\b  \n");
     log_and_stdout_printf(self->log, "Bytes recibidos   : %ld\n", received_bytes);
     log_and_stdout_printf(self->log, "IP del emisor     : %s\n", inet_ntoa(remote_connection_info.sin_addr));
     log_and_stdout_printf(self->log, "Puerto del emisor : %d UDP\n", ntohs(remote_connection_info.sin_port));

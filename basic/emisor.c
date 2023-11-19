@@ -8,8 +8,7 @@
 #include "host.h"
 #include "loging.h"
 
-#define MAX_MESSAGE_SIZE 2048
-
+#define DEFAULT_MAX_BYTES_SENT 1000
 #define DEFAULT_SENDER_PORT 8100
 #define IP_LOCALHOST "127.0.0.1"
 #define DEFAULT_RECEIVER_IP IP_LOCALHOST
@@ -27,6 +26,7 @@ struct Arguments {
     char *remote_ip;
     uint16_t remote_port;
     char *logfile;
+    size_t max_bytes_to_send;
 };
 
 /**
@@ -38,6 +38,7 @@ enum Option {
     OPT_SOURCE_PORT = 'o',
     OPT_RECEIVER_IP = 'i',
     OPT_RECEIVER_PORT = 'p',
+    OPT_MAX_BYTES_TO_SEND = 'b',
     OPT_LOG_FILE_NAME = 'l',
     OPT_NO_LOG = 'n',
     OPT_HELP = 'h'
@@ -77,14 +78,28 @@ static void print_help(char *exe_name);
 static uint16_t getPortOrFail(char** argv, int pos);
 
 /**
+ * @brief   Obtiene el número máximo de bytes a enviar de los argumentos del programa.
+ *
+ * Función auxiliar para convertir un argumento del programa en el número de bytes máximo a enviar.
+ *
+ * @param argv  Lista con los argumentos del programa.
+ * @param pos   Posición en argv en la que se encuentra la string que se quiere 
+ *              interpretar como máximo número de bytes a enviar.
+ *
+ * @return  Máximo número de bytes a enviar, leído de los argumentos del programa; falla si el número no es válido.
+ */
+static size_t getMaxBytesToSendOrFail(char** argv, int pos);
+
+/**
  * @brief   Envía un mensaje a un host remoto.
  *
- * Hace que el host sender envíe un mensaje de saludo al host remote.
+ * Hace que el host sender envíe un mensaje con floats aleatorios al host remote.
  *
  * @param self      Host que envía el mensaje.
  * @param remote    Host al que enviar el mensaje.
+ * @param max_bytes_to_send     Número máximo de bytes a enviar.
  */
-static void send_message(Host *sender, Host *remote);
+static void send_message(Host *sender, Host *remote, size_t max_bytes_to_send);
 
 
 int main(int argc, char** argv) {
@@ -93,7 +108,8 @@ int main(int argc, char** argv) {
             .local_port = DEFAULT_SENDER_PORT,
             .remote_ip = DEFAULT_RECEIVER_IP,
             .remote_port = DEFAULT_RECEIVER_PORT,
-            .logfile = DEFAULT_LOG_FILE
+            .logfile = DEFAULT_LOG_FILE,
+            .max_bytes_to_send = DEFAULT_MAX_BYTES_SENT
     };
 
     set_colors();
@@ -105,7 +121,7 @@ int main(int argc, char** argv) {
 
     remote = create_remote_host(AF_INET, SOCK_DGRAM, 0, args.remote_ip, args.remote_port);
 
-    send_message(&sender, &remote);
+    send_message(&sender, &remote, args.max_bytes_to_send);
 
     close_host(&sender);
     close_host(&remote);
@@ -114,26 +130,32 @@ int main(int argc, char** argv) {
 }
 
 
-static void send_message(Host *sender, Host *remote) {
-    char message_to_send[MAX_MESSAGE_SIZE];
+static void send_message(Host *sender, Host *remote, size_t max_bytes_to_send) {
+    float message_to_send[max_bytes_to_send / sizeof(float)];
     ssize_t sent_bytes;
+    int i;
 
     log_and_stdout_printf(sender->log, "Puerto del emisor   : %d UDP\n", sender->port);
     log_and_stdout_printf(sender->log, "IP     del receptor : %s\n", remote->ip);
     log_and_stdout_printf(sender->log, "Puerto del receptor : %d UDP\n", remote->port);
 
-    sprintf(message_to_send, "El host %s en %s:%u te saluda.\n", sender->hostname, sender->ip, sender->port);
+    for (i = 0; i < max_bytes_to_send / sizeof(float) + 1; i++) {
+        message_to_send[i] = drand48();
+    }
 
     // Enviamos el mensaje al cliente
-    sent_bytes = sendto(sender->socket, message_to_send, strlen(message_to_send), /*__flags*/ 0, (struct sockaddr *) &remote->address, sizeof(remote->address));
+    sent_bytes = sendto(sender->socket, message_to_send, max_bytes_to_send, /*__flags*/ 0, (struct sockaddr *) &remote->address, sizeof(remote->address));
 
-    if (sent_bytes == -1)
-    {
+    if (sent_bytes == -1) {
         log_printf_err(sender->log, "ERROR: Se produjo un error cuando se intentaba enviar el mensaje\n");
         fail("ERROR: Se produjo un error cuando se intentaba enviar el mensaje");
     }
 
-    log_and_stdout_printf(sender->log, "Mensaje enviado     : \"%s\"\n", message_to_send);
+    log_and_stdout_printf(sender->log, "Mensaje enviado     : ");
+    for (i = 0; i < max_bytes_to_send / sizeof(float); i++) {
+        printf("%f; ", message_to_send[i]);
+    }
+    printf("\b\b  \n");
     log_and_stdout_printf(sender->log, "Bytes enviados      : %ld\n", sent_bytes);
 }
 
@@ -162,6 +184,7 @@ static void print_help(char *exe_name) {
     printf("  -o <origen>\t--origen <puerto_org> \t%d \t\tPuerto desde donde se enviará el mensaje.\n", DEFAULT_SENDER_PORT);
     printf("  -i <ip>\t--ip <ip_dest>\t\t%s \tIP del receptor del mensaje.\n", DEFAULT_RECEIVER_IP);
     printf("  -p <puerto>\t--puerto <puerto_dest>\t%d \t\tPuerto del receptor al que se enviará el mensaje.\n", DEFAULT_RECEIVER_PORT);
+    printf("  -b <bytes>\t--max-bytes <bytes>\t%d\t\tBytes máximos a enviar con sendto (para el apartado d).\n", DEFAULT_MAX_BYTES_SENT);
 
     printf("\n");
 
@@ -192,6 +215,18 @@ static uint16_t getPortOrFail(char** argv, int pos) {
     return read_number;
 }
 
+static size_t getMaxBytesToSendOrFail(char** argv, int pos) {
+    size_t send_number = atol(argv[pos]);
+
+    if (send_number <= 0) {
+        fprintf(stderr, "ERROR: El valor (para el apartado d) de bytes máximos a enviar especificado (%s) no es válido\n", argv[pos]);
+        print_help(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    return send_number;
+}
+
 static void process_args(struct Arguments *args, int argc, char** argv) {
     bool allow_unnamed_basic_params = true;
 
@@ -219,7 +254,11 @@ static void process_args(struct Arguments *args, int argc, char** argv) {
                 } else if (!strcmp(current_arg_str, "--puerto"))
                 {
                     current_option = OPT_RECEIVER_PORT; // 'p'
-                } else if (!strcmp(current_arg_str, "--log"))
+                } else if (!strcmp(current_arg_str, "--max-bytes"))
+                {
+                    current_option = OPT_MAX_BYTES_TO_SEND; // 'b'
+                }
+                else if (!strcmp(current_arg_str, "--log"))
                 {
                     current_option = OPT_LOG_FILE_NAME; // 'l'
                 } else if (!strcmp(current_arg_str, "--no-log"))
@@ -283,6 +322,16 @@ static void process_args(struct Arguments *args, int argc, char** argv) {
                     args->remote_port = getPortOrFail(argv, pos);
                 } else {
                     fprintf(stderr, "ERROR: Puerto no especificado tras la opción '-p'\n");
+                    print_help(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+
+            case OPT_MAX_BYTES_TO_SEND: // 'b' /* Limitación del número de bytes a mandar (Para el apartado d) */
+                if (++pos < argc) {
+                    args->max_bytes_to_send = getMaxBytesToSendOrFail(argv, pos);
+                } else {
+                    fprintf(stderr, "ERROR: Número máximo de bytes a mandar (para el apartado d) no especificado tras la opción '-b'\n");
                     print_help(argv[0]);
                     exit(EXIT_FAILURE);
                 }
