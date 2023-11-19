@@ -5,6 +5,8 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <stdio.h>
+#include <errno.h>
+#include <unistd.h>
 
 /**
  * Estructura que contiene toda la información relevante 

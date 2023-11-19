@@ -19,8 +19,7 @@
 
 /**
  * Estructura de datos para pasar a la función process_args.
- * Debe contener siempre los campos int argc, char** argv, provenientes de main,
- * y luego una cantidad variable de punteros a las variables que se quieran inicializar
+ * Contiene una cantidad variable de variables que se quieran inicializar
  * a partir de la entrada del programa.
  */
 struct Arguments {
