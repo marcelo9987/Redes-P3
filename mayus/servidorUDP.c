@@ -27,7 +27,7 @@ struct Arguments {
 };
 
 /**
- * Estrucutra enumerada para manejar de forma más limpia las distintas opciones del programa.
+ * Enumeración para manejar de forma más limpia las distintas opciones del programa.
  */
 enum Option {
     OPT_NO_OPTION = '~',
@@ -50,7 +50,7 @@ enum Option {
  * @param argc  Número de argumentos que recibe la función principal del programa.
  * @param argv  Lista con los argumentos de la función principal del programa.
  */
-static void process_args(struct Arguments *args, int argc, char** argv);
+static void process_args(struct Arguments *args, int argc, char **argv);
 
 /**
  * @brief   Imprime la ayuda del programa
@@ -69,7 +69,7 @@ static void print_help(char *exe_name);
  *
  * @return  Número de puerto leído de los argumentos del programa; falla si el número de puerto no es válido.
  */
-static uint16_t getPortOrFail(char** argv, int pos);
+static uint16_t getPortOrFail(char **argv, int pos);
 
 
 /**
@@ -91,48 +91,67 @@ static char *toupper_string(const char *source);
  *
  * Recibe una string de un cliente, la pasa a mayúsculas y se la reenvía.
  *
- * @param server    Servidor que maneja la conexión.
+ * @param local_server    Servidor que maneja la conexión.
  */
-void handle_message(Host *server);
+void handle_message(Host *local_server);
 
 
+int main(int argc, char **argv) {
+    Host local_server;
 
-int main(int argc, char** argv) {
-    Host server;
+    /* Inicializamos los parámetros a sus valores por defecto */
     struct Arguments args = {
             .server_port = DEFAULT_SERVER_PORT,
             .logfile = DEFAULT_LOG_FILE
     };
 
+    set_colors();
 
-    if (!setlocale(LC_ALL, "")) fail("ERROR: No se pudo establecer la locale del programa");   /* Establecer la locale según las variables de entorno */
+    if (!setlocale(LC_ALL, "")) {
+        /* Establecer la locale según las variables de entorno */
+        fail("ERROR: No se pudo establecer la locale del programa");
+    }
 
+    /* Recogemos los parámetros recibidos en la línea de comandos */
     process_args(&args, argc, argv);
 
     printf("Ejecutando servidor de mayúsculas con parámetros: PUERTO=%u, LOG=%s\n", args.server_port, args.logfile);
-    server = create_own_host(AF_INET, SOCK_DGRAM, 0, args.server_port, args.logfile);
+    local_server = create_own_host(AF_INET, SOCK_DGRAM, 0, args.server_port, args.logfile);
+
+    log_and_stdout_printf(local_server.log, "IPs v4 del servidor local     : %s\n", local_server.local_ips_v4);
+    log_and_stdout_printf(local_server.log, "IPs v6 del servidor local     : %s\n", local_server.local_ips_v6);
+    log_and_stdout_printf(local_server.log, "Puerto del servidor local     : %d UDP\n", local_server.port);
+    log_and_stdout_printf(local_server.log, "IP pública del servidor local : %s\n", local_server.public_ip);
+
+    log_and_stdout_printf(local_server.log, "---------------------\n");
 
     while (!terminate) {
-        printf("\nEsperando mensaje...\n");
-        if (!socket_io_pending) pause();    /* Pausamos la ejecución hasta que se reciba una señal de I/O o de terminación */
-        handle_message(&server);
+        printf("\nEsperando mensajes...\n");
+
+        if (!socket_io_pending) {
+            /* Pausamos la ejecución hasta que se reciba una señal de I/O o de terminación */
+            pause();
+        }
+
+        handle_message(&local_server);
     }
 
     printf("\nCerrando el servidor y saliendo...\n");
-    close_host(&server);
+
+    close_host(&local_server);
 
     exit(EXIT_SUCCESS);
 }
 
 
-void handle_message(Host *server) {
-    struct sockaddr_in client_address; 
+void handle_message(Host *local_server) {
+    struct sockaddr_in remote_client_address;
     char input[DEFAULT_MAX_BYTES_RECV];
-    char* output;
+    char *output;
     ssize_t recv_bytes, sent_bytes;
     socklen_t client_addr_size = sizeof(struct sockaddr_in);
 
-    recv_bytes = recvfrom(server->socket, input, DEFAULT_MAX_BYTES_RECV, 0, (struct sockaddr *) &client_address, &client_addr_size);
+    recv_bytes = recvfrom(local_server->socket, input, DEFAULT_MAX_BYTES_RECV, 0, (struct sockaddr *) &remote_client_address, &client_addr_size);
     if (recv_bytes == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {  /* Hemos marcado al socket con O_NONBLOCK; no hay conexiones pendientes, así que lo registramos y salimos */
             socket_io_pending = 0;
@@ -141,25 +160,41 @@ void handle_message(Host *server) {
         fail("ERROR: Error al recibir la línea de texto");
     }
 
-    printf("Paquete recibido de %s:%d\n", inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port));
-    log_printf(server->log, "Paquete recibido de %s:%d\n", inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port));
+    log_and_stdout_printf(local_server->log, "===================================\n");
 
-    if (!recv_bytes) return;    /* Se recibió una orden de cerrar la conexión */
+    log_and_stdout_printf(local_server->log, "[Servidor] Paquete recibido\n");
+    log_and_stdout_printf(local_server->log, "IP del cliente remoto         : %s\n", inet_ntoa(remote_client_address.sin_addr));
+    log_and_stdout_printf(local_server->log, "Puerto del cliente remoto     : %d UDP\n", ntohs(remote_client_address.sin_port));
+    log_and_stdout_printf(local_server->log, "---------------------\n");
 
-    printf("\tMensaje recibido: %s\n", input);
+    log_and_stdout_printf(local_server->log, "\t[Servidor] Mensaje recibido : <<%s>>\n", input);
+
+    /*
+    if (!recv_bytes) {
+        // Se recibió una orden de cerrar la conexión
+        return;
+    }
+    */
 
     output = toupper_string(input);
 
-    sent_bytes = sendto(server->socket, output, strlen(output) + 1, 0, (struct sockaddr *) &client_address, client_addr_size);
-    if (sent_bytes  < 0) {
-        if (output) free(output);
-        log_printf_err(server->log, "Error al enviar línea de texto al cliente.\n");
+    sent_bytes = sendto(local_server->socket, output, strlen(output) + 1, 0, (struct sockaddr *) &remote_client_address, client_addr_size);
+    if (sent_bytes < 0) {
+        if (output) {
+            free(output);
+        }
+
+        log_printf_err(local_server->log, "Error al enviar línea de texto al cliente.\n");
         fail("ERROR: Error al enviar la línea de texto al cliente");
     }
 
-    printf("Enviado: %s\n", output);
+    log_and_stdout_printf(local_server->log, "\t[Servidor] Enviado          : <<%s>>\n", output);
 
-    if (output) free(output);
+    log_and_stdout_printf(local_server->log, "===================================\n");
+
+    if (output) {
+        free(output);
+    }
 
     socket_io_pending--;
 }
@@ -190,13 +225,16 @@ static char *toupper_string(const char *source) {
     char *destination = (char *) calloc(size + 1, sizeof(char));
     wcstombs(destination, wide_destination, size + 1);
 
-    if (wide_source) free(wide_source);
+    if (wide_source) {
+        free(wide_source);
+    }
 
-    if (wide_destination) free(wide_destination);
+    if (wide_destination) {
+        free(wide_destination);
+    }
 
     return destination;
 }
-
 
 
 static void print_help(char *exe_name) {
@@ -219,8 +257,8 @@ static void print_help(char *exe_name) {
 }
 
 
-static uint16_t getPortOrFail(char** argv, int pos) {
-    uint16_t read_number = atoi(argv[pos]);
+static uint16_t getPortOrFail(char **argv, int pos) {
+    long read_number = atol(argv[pos]);
 
     if (read_number <= 0 || read_number > 65535) {
         fprintf(stderr, "ERROR: El valor de puerto especificado (%s) no es válido\n", argv[pos]);
@@ -232,27 +270,22 @@ static uint16_t getPortOrFail(char** argv, int pos) {
 }
 
 
-static void process_args(struct Arguments *args, int argc, char** argv) {
-    char* current_arg_str;
+static void process_args(struct Arguments *args, int argc, char **argv) {
+    char *current_arg_str;
 
     /* Procesamos los argumentos (sin contar el nombre del ejecutable) */
-    for (int pos = 1; pos < argc; pos++)
-    {
+    for (int pos = 1; pos < argc; pos++) {
         current_arg_str = argv[pos];
         if (current_arg_str[0] == OPT_OPTION_FLAG) { /* Flag de opción */
             /* Manejar las opciones largas */
             if (current_arg_str[1] == OPT_OPTION_FLAG) { /* Opción larga */
-                if (!strcmp(current_arg_str, "--puerto"))
-                {
+                if (!strcmp(current_arg_str, "--puerto")) {
                     current_arg_str = "-p";
-                } else if (!strcmp(current_arg_str, "--log"))
-                {
+                } else if (!strcmp(current_arg_str, "--log")) {
                     current_arg_str = "-l";
-                } else if (!strcmp(current_arg_str, "--no-log"))
-                {
+                } else if (!strcmp(current_arg_str, "--no-log")) {
                     current_arg_str = "-n";
-                } else if (!strcmp(current_arg_str, "--help"))
-                {
+                } else if (!strcmp(current_arg_str, "--help")) {
                     current_arg_str = "-h";
                 }
             }

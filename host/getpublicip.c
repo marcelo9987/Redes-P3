@@ -6,7 +6,7 @@
 #include <netdb.h>
 #include <string.h>
 
-#include "getip.h"
+#include "getpublicip.h"
 
 #define BUFFER_LEN 1024
 #define SERVICE "http"
@@ -26,7 +26,7 @@
  *
  * @return  Puntero a la string de destino ip, o NULL en caso de error.
  */
-char* getip(char* ip, size_t len) {
+char* getpublicip(char* ip, size_t len) {
     struct addrinfo hints;  
     struct addrinfo* result, *rp;
     int status;
@@ -34,7 +34,7 @@ char* getip(char* ip, size_t len) {
     char http_request[] = HTTP_REQUEST;
     char input_buffer[BUFFER_LEN] = {0};
 
-    memset(&hints, 0, sizeof(struct addrinfo)); /* Inicializar a 0 */
+    memset(&hints, 0, sizeof(struct addrinfo)); /* Inicializamos a 0 */
     /* Especifica criterios para seleccionar las estructuras de direcciones de socket en la lista que se obtiene con getaddrinfo() */
     hints = (struct addrinfo) {
         .ai_family   = AF_INET,         /* Familia de direcciones para las direcciones devueltas (IPv4) */

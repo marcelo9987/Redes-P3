@@ -30,7 +30,7 @@ struct Arguments {
 };
 
 /**
- * Estrucutra enumerada para manejar de forma más limpia las distintas opciones del programa.
+ * Enumeración para manejar de forma más limpia las distintas opciones del programa.
  */
 enum Option {
     OPT_NO_OPTION = '~',
@@ -55,7 +55,7 @@ enum Option {
  * @param argc  Número de argumentos que recibe la función principal del programa.
  * @param argv  Lista con los argumentos de la función principal del programa.
  */
-static void process_args(struct Arguments *args, int argc, char** argv);
+static void process_args(struct Arguments *args, int argc, char **argv);
 
 /**
  * @brief   Imprime la ayuda del programa
@@ -74,21 +74,23 @@ static void print_help(char *exe_name);
  *
  * @return  Número de puerto leído de los argumentos del programa; falla si el número de puerto no es válido.
  */
-static uint16_t getPortOrFail(char** argv, int pos);
+static uint16_t getPortOrFail(char **argv, int pos);
 
 /**
  * @brief   Envía un mensaje a un host remoto.
  *
- * Hace que el host sender envíe un mensaje de saludo al host remote.
+ * Hace que el host local_sender envíe un mensaje de saludo al host remote_receiver.
  *
  * @param self      Host que envía el mensaje.
- * @param remote    Host al que enviar el mensaje.
+ * @param remote_receiver    Host al que enviar el mensaje.
  */
-static void send_message(Host *sender, Host *remote);
+static void send_message(Host *local_sender, Host *remote_receiver);
 
 
-int main(int argc, char** argv) {
-    Host sender, remote;
+int main(int argc, char **argv) {
+    Host local_sender, remote_receiver;
+
+    /* Inicializamos los parámetros a sus valores por defecto */
     struct Arguments args = {
             .local_port = DEFAULT_SENDER_PORT,
             .remote_ip = DEFAULT_RECEIVER_IP,
@@ -98,45 +100,50 @@ int main(int argc, char** argv) {
 
     set_colors();
 
-    /* Inicializar los parámetros a sus valores por defecto */
+    /* Recogemos los parámetros recibidos en la línea de comandos */
     process_args(&args, argc, argv);
 
-    sender = create_own_host(AF_INET, SOCK_DGRAM, 0, args.local_port, args.logfile);
+    local_sender = create_own_host(AF_INET, SOCK_DGRAM, 0, args.local_port, args.logfile);
 
-    remote = create_remote_host(AF_INET, SOCK_DGRAM, 0, args.remote_ip, args.remote_port);
+    remote_receiver = create_remote_host(AF_INET, SOCK_DGRAM, 0, args.remote_ip, args.remote_port);
 
-    send_message(&sender, &remote);
+    send_message(&local_sender, &remote_receiver);
 
-    close_host(&sender);
-    close_host(&remote);
+    close_host(&local_sender);
+    close_host(&remote_receiver);
 
     return 0;
 }
 
 
-static void send_message(Host *sender, Host *remote) {
+static void send_message(Host *local_sender, Host *remote_receiver) {
     char message_to_send[MAX_MESSAGE_SIZE];
     ssize_t sent_bytes;
 
-    log_and_stdout_printf(sender->log, "Puerto del emisor   : %d UDP\n", sender->port);
-    log_and_stdout_printf(sender->log, "IP     del receptor : %s\n", remote->ip);
-    log_and_stdout_printf(sender->log, "Puerto del receptor : %d UDP\n", remote->port);
+    log_and_stdout_printf(local_sender->log, "IPs v4 del emisor     : %s\n", local_sender->local_ips_v4);
+    log_and_stdout_printf(local_sender->log, "IPs v6 del emisor     : %s\n", local_sender->local_ips_v6);
+    log_and_stdout_printf(local_sender->log, "Puerto del emisor     : %d UDP\n", local_sender->port);
+    log_and_stdout_printf(local_sender->log, "IP pública del emisor : %s\n", local_sender->public_ip);
 
-    sprintf(message_to_send, "El host %s en %s:%u te saluda.\n", sender->hostname, sender->ip, sender->port);
+    log_and_stdout_printf(local_sender->log, "---------------------\n");
+
+    log_and_stdout_printf(local_sender->log, "IP del receptor       : %s\n", inet_ntoa(remote_receiver->address.sin_addr));
+    log_and_stdout_printf(local_sender->log, "Puerto del receptor   : %d UDP\n", ntohs(remote_receiver->address.sin_port));
+
+//    sprintf(message_to_send, "El host %s en %s:%u te saluda.", local_sender->hostname, local_sender->ip, local_sender->port);
+    sprintf(message_to_send, "El host %s en %s:%u (%s) te saluda.", local_sender->hostname, local_sender->local_ips_v4, local_sender->port, local_sender->public_ip);
 
     // Enviamos el mensaje al cliente
-    sent_bytes = sendto(sender->socket, message_to_send, strlen(message_to_send), /*__flags*/ 0, (struct sockaddr *) &remote->address, sizeof(remote->address));
+    sent_bytes = sendto(local_sender->socket, message_to_send, strlen(message_to_send), /*__flags*/ 0, (struct sockaddr *) &remote_receiver->address, sizeof(remote_receiver->address));
 
-    if (sent_bytes == -1)
-    {
-        log_printf_err(sender->log, "ERROR: Se produjo un error cuando se intentaba enviar el mensaje\n");
+    if (sent_bytes == -1) {
+        log_printf_err(local_sender->log, "ERROR: Se produjo un error cuando se intentaba enviar el mensaje\n");
         fail("ERROR: Se produjo un error cuando se intentaba enviar el mensaje");
     }
 
-    log_and_stdout_printf(sender->log, "Mensaje enviado     : \"%s\"\n", message_to_send);
-    log_and_stdout_printf(sender->log, "Bytes enviados      : %ld\n", sent_bytes);
+    log_and_stdout_printf(local_sender->log, "Mensaje enviado       : \"%s\"\n", message_to_send);
+    log_and_stdout_printf(local_sender->log, "Bytes enviados        : %ld\n", sent_bytes);
 }
-
 
 
 static void print_help(char *exe_name) {
@@ -180,8 +187,8 @@ static void print_help(char *exe_name) {
     printf("\n");
 }
 
-static uint16_t getPortOrFail(char** argv, int pos) {
-    long read_number = atoi(argv[pos]);
+static uint16_t getPortOrFail(char **argv, int pos) {
+    long read_number = atol(argv[pos]);
 
     if (read_number <= 0 || read_number > 65535) {
         fprintf(stderr, "ERROR: El valor de puerto especificado (%s) no es válido\n", argv[pos]);
@@ -192,7 +199,8 @@ static uint16_t getPortOrFail(char** argv, int pos) {
     return read_number;
 }
 
-static void process_args(struct Arguments *args, int argc, char** argv) {
+
+static void process_args(struct Arguments *args, int argc, char **argv) {
     bool allow_unnamed_basic_params = true;
 
     enum Option next_unnamed_basic_param = OPT_SOURCE_PORT; // 'o'
@@ -210,23 +218,17 @@ static void process_args(struct Arguments *args, int argc, char** argv) {
 
             /* Manejar las opciones largas */
             if (current_option == OPT_OPTION_FLAG) { // '-'
-                if (!strcmp(current_arg_str, "--origen"))
-                {
+                if (!strcmp(current_arg_str, "--origen")) {
                     current_option = OPT_SOURCE_PORT; // 'o'
-                } else if (!strcmp(current_arg_str, "--ip"))
-                {
+                } else if (!strcmp(current_arg_str, "--ip")) {
                     current_option = OPT_RECEIVER_IP; // 'i'
-                } else if (!strcmp(current_arg_str, "--puerto"))
-                {
+                } else if (!strcmp(current_arg_str, "--puerto")) {
                     current_option = OPT_RECEIVER_PORT; // 'p'
-                } else if (!strcmp(current_arg_str, "--log"))
-                {
+                } else if (!strcmp(current_arg_str, "--log")) {
                     current_option = OPT_LOG_FILE_NAME; // 'l'
-                } else if (!strcmp(current_arg_str, "--no-log"))
-                {
+                } else if (!strcmp(current_arg_str, "--no-log")) {
                     current_option = OPT_NO_LOG; // 'n'
-                } else if (!strcmp(current_arg_str, "--help"))
-                {
+                } else if (!strcmp(current_arg_str, "--help")) {
                     current_option = OPT_HELP; // 'h'
                 }
             }

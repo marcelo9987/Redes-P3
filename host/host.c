@@ -9,16 +9,18 @@
 #include <signal.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 
 #include "host.h"
-#include "getip.h"
+#include "getpublicip.h"
 #include "loging.h"
+#include "getlocalips.h"
 
-#define BUFFER_LEN 128
+#define BUFFER_LEN 2048
 
 /** Variables globales que exportar en el fichero de cabecera para el manejo de señales */
 uint8_t socket_io_pending;
-uint8_t terminate;
+bool terminate;
 
 
 /**
@@ -38,7 +40,7 @@ static void signal_handler(int signum) {
             break;
         case SIGINT:
         case SIGTERM:
-            terminate = 1;          /* Marca que el programa debe terminar */
+            terminate = true;          /* Marca que el programa debe terminar */
             break;
         default:
             break;
@@ -67,7 +69,7 @@ Host create_own_host(int domain, int type, int protocol, uint16_t port, char* lo
     Host host;
     char buffer[BUFFER_LEN] = {0};
 
-    memset(&host, 0, sizeof(Host));     /* Inicializar los campos a 0 */
+    memset(&host, 0, sizeof(Host));     /* Inicializamos los campos a 0 */
 
     host = (Host) {
         .domain = domain,
@@ -100,13 +102,35 @@ Host create_own_host(int domain, int type, int protocol, uint16_t port, char* lo
 
     /* Guardar la IP externa del host.
      * Tampoco supone un error crítico. */
-    if (!getip(buffer, BUFFER_LEN)) {
+    if (!getpublicip(buffer, BUFFER_LEN)) {
         perror("No se pudo obtener la IP externa del host");
         log_printf_err(host.log, "Error al obtener la IP externa del host.\n");
     } else {
-        host.ip = (char *) calloc(strlen(buffer) + 1, sizeof(char));
-        strcpy(host.ip, buffer);
-        log_printf(host.log, "IP externa del host configurada con éxito: %s.\n", host.ip);
+        host.public_ip = (char *) calloc(strlen(buffer) + 1, sizeof(char));
+        strcpy(host.public_ip, buffer);
+        log_printf(host.log, "IP externa del host configurada con éxito: %s.\n", host.public_ip);
+    }
+
+    /* Guardar las IPs v4 locales del host.
+     * Tampoco supone un error crítico. */
+    if (!get_local_ip_addresses(buffer, BUFFER_LEN, AF_INET)) {
+        perror("No se pudieron obtener las IPs v4 locales del host");
+        log_printf_err(host.log, "Error al obtener las IPs v4 locales del host.\n");
+    } else {
+        host.local_ips_v4 = (char *) calloc(strlen(buffer) + 1, sizeof(char));
+        strcpy(host.local_ips_v4, buffer);
+        log_printf(host.log, "IPs v4 locales del host configuradas con éxito: %s.\n", host.local_ips_v4);
+    }
+
+    /* Guardar las IPs v6 locales del host.
+     * Tampoco supone un error crítico. */
+    if (!get_local_ip_addresses(buffer, BUFFER_LEN, AF_INET6)) {
+        perror("No se pudieron obtener las IPs v6 locales del host");
+        log_printf_err(host.log, "Error al obtener las IPs v6 locales del host.\n");
+    } else {
+        host.local_ips_v6 = (char *) calloc(strlen(buffer) + 1, sizeof(char));
+        strcpy(host.local_ips_v6, buffer);
+        log_printf(host.log, "IPs v6 locales del host configuradas con éxito: %s.\n", host.local_ips_v6);
     }
 
     /* Crear el socket del host */
@@ -146,8 +170,8 @@ Host create_own_host(int domain, int type, int protocol, uint16_t port, char* lo
     
 
     printf( "Host creado con éxito.\n"
-            "Hostname: %s; IP: %s; Puerto: %d\n\n", host.hostname, host.ip, host.port);
-    log_printf(host.log, "Host creado con éxito.\tHostname: %s; IP: %s; Puerto: %d\n", host.hostname, host.ip, host.port);
+            "Hostname: %s; IPs v4 locales:%s; IPs v6 locales: %s; Puerto: %d; IP pública: %s\n\n", host.hostname, host.local_ips_v4, host.local_ips_v6, host.port, host.public_ip);
+    log_printf(host.log, "Host creado con éxito.\tHostname: %s; IPs v4 locales:%s; IPs v6 locales:%s; Puerto: %d; IP pública: %s\n", host.hostname, host.local_ips_v4, host.local_ips_v6, host.port, host.public_ip);
 
     return host;
 }
@@ -172,7 +196,7 @@ Host create_own_host(int domain, int type, int protocol, uint16_t port, char* lo
 Host create_remote_host(int domain, int type, int protocol, char* ip, uint16_t port) {
     Host remote;
 
-    memset(&remote, 0, sizeof(Host));   /* Inicializar los campos a 0 */
+    memset(&remote, 0, sizeof(Host));   /* Inicializamos los campos a 0 */
 
     remote = (Host) {
         .domain = domain,
@@ -189,8 +213,8 @@ Host create_remote_host(int domain, int type, int protocol, char* ip, uint16_t p
     }
 
     /* Guardar la IP del host remoto en formato textual */
-    remote.ip = (char *) calloc(strlen(ip) + 1, sizeof(char));
-    strcpy(remote.ip, ip);
+    remote.public_ip = (char *) calloc(strlen(ip) + 1, sizeof(char));
+    strcpy(remote.public_ip, ip);
 
     remote.socket = -1; /* Ponemos el socket a un valor no permitido para saber que no se puede usar y que no hay que cerrarlo */
 
@@ -217,7 +241,9 @@ void close_host(Host* host) {
     }
 
     if (host->hostname) free(host->hostname);
-    if (host->ip) free(host->ip);
+    if (host->public_ip) free(host->public_ip);
+    if (host->local_ips_v4) free(host->local_ips_v4);
+    if (host->local_ips_v6) free(host->local_ips_v6);
     if (host->log) fclose(host->log);
 
     /* Limpiar la estructura poniendo todos los campos a 0 */

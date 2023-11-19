@@ -1,5 +1,5 @@
-#ifndef GETIP_H
-#define GETIP_H
+#ifndef GETPUBLICIP_H
+#define GETPUBLICIP_H
 
 #include <stdlib.h>
 
@@ -17,8 +17,8 @@
  *
  * @return  Puntero a la string de destino ip, o NULL en caso de error.
  */
-char* getip(char* ip, size_t len);
+char* getpublicip(char* ip, size_t len);
 
 
-#endif /* GETIP_H */
+#endif /* GETPUBLICIP_H */
 

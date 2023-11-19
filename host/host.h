@@ -19,7 +19,9 @@ typedef struct {
     int protocol;   /* Protocolo particular usado en el socket */
     uint16_t port;  /* Puerto en el que el servidor escucha peticiones (en orden de host) */
     char* hostname; /* Nombre del equipo en el que está ejecutándose el servidor */
-    char* ip;       /* IP externa del servidor (en formato textual) */
+    char* public_ip;       /* IP externa del servidor (en formato textual) */
+    char* local_ips_v4;       /* IPs v4 locales del host (en formato textual, separadas por ", ") */
+    char* local_ips_v6;       /* IPs v6 locales del host (en formato textual, separadas por ", ") */
     struct sockaddr_in address;  /* Estructura con el dominio de comunicación, IPs a las que atender
                                            y puerto al que está asociado el socket */
     FILE* log;      /* Archivo en el que guardar el registro de actividad del servidor */
@@ -31,7 +33,7 @@ typedef struct {
 extern uint8_t socket_io_pending;   /* Contiene el número de eventos de entrada/salida pendientes de manejar en el socket del host. 
                                      * Su uso permite que el host no se quede bloqueado en el proceso de espera de señales, pero que aún así pueda pausarse
                                      * para no gastar recursos de forma innecesaria */
-extern uint8_t terminate;           /* Vale 1 si llegó una señal de terminación (SIGINT o SIGTERM). En este caso se espera que el proceso termine limpiamente. */
+extern bool terminate;           /* Vale true si llegó una señal de terminación (SIGINT o SIGTERM). En este caso se espera que el proceso termine limpiamente. */
 
 /**
  * @brief   Crea un host del propio programa.

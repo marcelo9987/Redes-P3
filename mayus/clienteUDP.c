@@ -37,7 +37,7 @@ struct Arguments {
 };
 
 /**
- * Estrucutra enumerada para manejar de forma más limpia las distintas opciones del programa.
+ * Enumeración para manejar de forma más limpia las distintas opciones del programa.
  */
 enum Option {
     OPT_NO_OPTION = '~',
@@ -63,7 +63,7 @@ enum Option {
  * @param argc  Número de argumentos que recibe la función principal del programa.
  * @param argv  Lista con los argumentos de la función principal del programa.
  */
-static void process_args(struct Arguments *args, int argc, char** argv);
+static void process_args(struct Arguments *args, int argc, char **argv);
 
 /**
  * @brief   Imprime la ayuda del programa
@@ -82,7 +82,7 @@ static void print_help(char *exe_name);
  *
  * @return  Número de puerto leído de los argumentos del programa; falla si el número de puerto no es válido.
  */
-static uint16_t getPortOrFail(char** argv, int pos);
+static uint16_t getPortOrFail(char **argv, int pos);
 
 /**
  * @brief   Maneja el intercambio de datos con el servidor.
@@ -98,8 +98,10 @@ static uint16_t getPortOrFail(char** argv, int pos);
 void handle_data(Host *local_client, Host *remote_server, char *input_file_name);
 
 
-int main(int argc, char** argv) {
-    Host client, server;
+int main(int argc, char **argv) {
+    Host local_client, remote_server;
+
+    /* Inicializamos los parámetros a sus valores por defecto */
     struct Arguments args = {
             .input_file_name= DEFAULT_INPUT_FILE_NAME,
             .local_port=DEFAULT_LOCAL_PORT,
@@ -109,29 +111,31 @@ int main(int argc, char** argv) {
     };
 
     set_colors();
+
+    /* Recogemos los parámetros recibidos en la línea de comandos */
     process_args(&args, argc, argv);
 
-    client = create_own_host(AF_INET, SOCK_DGRAM, 0, args.local_port, args.logfile);
+    local_client = create_own_host(AF_INET, SOCK_DGRAM, 0, args.local_port, args.logfile);
 
-    server = create_remote_host(AF_INET, SOCK_DGRAM, 0, args.server_ip, args.server_port);
+    remote_server = create_remote_host(AF_INET, SOCK_DGRAM, 0, args.server_ip, args.server_port);
 
-    handle_data(&client, &server, args.input_file_name);
+    handle_data(&local_client, &remote_server, args.input_file_name);
 
     printf("\nCerrando el cliente y saliendo...\n");
-    close_host(&client);
-    close_host(&server);
+
+    close_host(&local_client);
+    close_host(&remote_server);
 
     exit(EXIT_SUCCESS);
 }
 
 
-
 void handle_data(Host *local_client, Host *remote_server, char *input_file_name) {
     ssize_t sent_bytes = 0, recv_bytes = 0;
-    FILE* fp_input;
-    FILE* fp_output;
+    FILE *fp_input;
+    FILE *fp_output;
     char recv_buffer[DEFAULT_MAX_BYTES_RECV];   /* Buffer de recepción */
-    char* send_buffer = NULL;  /* Buffer de envío */
+    char *send_buffer = NULL;  /* Buffer de envío */
     size_t buffer_size = 0; /* Necesitamos una variable con el tamaño del buffer para getline */
     socklen_t socket_addr_len = sizeof(struct sockaddr_in);
     bool received_flag;
@@ -141,11 +145,22 @@ void handle_data(Host *local_client, Host *remote_server, char *input_file_name)
         fail("ERROR: Error en la apertura del archivo de lectura");
     }
 
+    log_and_stdout_printf(local_client->log, "IPs v4 del cliente local     : %s\n", local_client->local_ips_v4);
+    log_and_stdout_printf(local_client->log, "IPs v6 del cliente local     : %s\n", local_client->local_ips_v6);
+    log_and_stdout_printf(local_client->log, "Puerto del cliente local     : %d UDP\n", local_client->port);
+    log_and_stdout_printf(local_client->log, "IP pública del cliente local : %s\n", local_client->public_ip);
+
+    log_and_stdout_printf(local_client->log, "---------------------\n");
+
+    log_and_stdout_printf(local_client->log, "IP del servidor remoto       : %s\n", inet_ntoa(remote_server->address.sin_addr));
+    log_and_stdout_printf(local_client->log, "Puerto del servidor remoto   : %d UDP\n", ntohs(remote_server->address.sin_port));
+
+    log_and_stdout_printf(local_client->log, "---------------------\n");
 
     /* Enviamos el nombre del archivo */
-    printf("Se procede a enviar el archivo: %s al servidor con IP: %s y puerto: %d\n", input_file_name, remote_server->ip, remote_server->port);
+    printf("Se procede a enviar el archivo: %s al servidor con IP: %s y puerto: %d\n", input_file_name, inet_ntoa(remote_server->address.sin_addr), remote_server->port);
 
-    printf("\nEnviando el nombre del archivo (\"%s\")\n", input_file_name);
+    printf("\nEnviando el nombre del archivo (<<%s>>)\n", input_file_name);
 
     sent_bytes = sendto(local_client->socket, input_file_name, strlen(input_file_name) + 1, /*flags*/ 0, (struct sockaddr *) &(remote_server->address), socket_addr_len);
     if (sent_bytes < 0) {
@@ -157,25 +172,34 @@ void handle_data(Host *local_client, Host *remote_server, char *input_file_name)
     /* Esperamos a recibir la línea */
     received_flag = false;
     while (!received_flag) {
-        if (!socket_io_pending) pause();    /* Pausamos la ejecución hasta recibir una señal de I/O o de terminación */
+        if (!socket_io_pending) {
+            /* Pausamos la ejecución hasta recibir una señal de I/O o de terminación */
+            pause();
+        }
         if (terminate) {
-            if (fclose(fp_input)) fail("ERROR: No se pudo cerrar el archivo de lectura");
+            if (fclose(fp_input)) {
+                fail("ERROR: No se pudo cerrar el archivo de lectura");
+            }
             return;
         }
+
         recv_bytes = recvfrom(local_client->socket, recv_buffer, DEFAULT_MAX_BYTES_RECV, /*flags*/ 0, (struct sockaddr *) &(remote_server->address), &socket_addr_len);
         if (recv_bytes == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {  /* Hemos marcado al socket con O_NONBLOCK; no hay conexiones pendientes, así que lo registramos y continuamos */
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                /* Hemos marcado al socket con O_NONBLOCK; no hay conexiones pendientes, así que lo registramos y continuamos */
                 socket_io_pending = 0;
                 continue;
             }
-            if (fclose(fp_input)) fail("ERROR: No se pudo cerrar el archivo de lectura");
+            if (fclose(fp_input)) {
+                fail("ERROR: No se pudo cerrar el archivo de lectura");
+            }
             fail("ERROR: No se pudo recibir el mensaje");
         }
         socket_io_pending--;
         received_flag = true;
     }
 
-    printf("Recibido: \"%s\"\n", recv_buffer);
+    printf("Recibido: <<%s>>\n", recv_buffer);
 
     /* Recibido el nombre del archivo en mayúsculas */
     /* Abrimos en modo escritura el archivo */
@@ -193,13 +217,19 @@ void handle_data(Host *local_client, Host *remote_server, char *input_file_name)
         }
 
         /* Enviamos la línea */
-        printf("\nEnviando: %s\n", input_file_name);
+        printf("\nEnviando: <<%s>>\n", input_file_name);
 
         sent_bytes = sendto(local_client->socket, send_buffer, strlen(send_buffer) + 1, 0, (struct sockaddr *) &(remote_server->address), socket_addr_len);
         if (sent_bytes < 0) {
-            if (fclose(fp_input)) fail("ERROR: No se pudo cerrar el archivo de lectura");
-            if (fclose(fp_output)) fail("ERROR: No se pudo cerrar el archivo de escritura");
-            if (send_buffer) free(send_buffer);
+            if (fclose(fp_input)) {
+                fail("ERROR: No se pudo cerrar el archivo de lectura");
+            }
+            if (fclose(fp_output)) {
+                fail("ERROR: No se pudo cerrar el archivo de escritura");
+            }
+            if (send_buffer) {
+                free(send_buffer);
+            }
 
             fail("ERROR: No se pudo enviar el mensaje");
         }
@@ -207,22 +237,41 @@ void handle_data(Host *local_client, Host *remote_server, char *input_file_name)
         /* Esperamos a recibir la línea */
         received_flag = false;
         while (!received_flag) {
-            if (!socket_io_pending) pause();    /* Pausamos la ejecución hasta recibir una señal de I/O o de terminación */
+            if (!socket_io_pending) {
+                /* Pausamos la ejecución hasta recibir una señal de I/O o de terminación */    /* Pausamos la ejecución hasta recibir una señal de I/O o de terminación */
+                pause();
+            }
+
             if (terminate) {
-                if (fclose(fp_input)) fail("ERROR: No se pudo cerrar el archivo de lectura");
-                if (fclose(fp_output)) fail("ERROR: No se pudo cerrar el archivo de escritura");
-                if (send_buffer) free(send_buffer);
+                if (fclose(fp_input)) {
+                    fail("ERROR: No se pudo cerrar el archivo de lectura");
+                }
+                if (fclose(fp_output)) {
+                    fail("ERROR: No se pudo cerrar el archivo de escritura");
+                }
+                if (send_buffer) {
+                    free(send_buffer);
+                }
                 return;
             }
+
             recv_bytes = recvfrom(local_client->socket, recv_buffer, DEFAULT_MAX_BYTES_RECV, /*flags*/ 0, (struct sockaddr *) &(remote_server->address), &socket_addr_len);
+
             if (recv_bytes == -1) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {  /* Hemos marcado al socket con O_NONBLOCK; no hay conexiones pendientes, así que lo registramos y continuamos */
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    /* Hemos marcado al socket con O_NONBLOCK; no hay conexiones pendientes, así que lo registramos y continuamos */
                     socket_io_pending = 0;
                     continue;
                 }
-                if (fclose(fp_input)) fail("ERROR: No se pudo cerrar el archivo de lectura");
-                if (fclose(fp_output)) fail("ERROR: No se pudo cerrar el archivo de escritura");
-                if (send_buffer) free(send_buffer);
+                if (fclose(fp_input)) {
+                    fail("ERROR: No se pudo cerrar el archivo de lectura");
+                }
+                if (fclose(fp_output)) {
+                    fail("ERROR: No se pudo cerrar el archivo de escritura");
+                }
+                if (send_buffer) {
+                    free(send_buffer);
+                }
 
                 fail("ERROR: No se pudo recibir el mensaje");
             }
@@ -230,18 +279,26 @@ void handle_data(Host *local_client, Host *remote_server, char *input_file_name)
             received_flag = true;
         }
 
-        printf("Recibido: %s\n", recv_buffer);
+        printf("Recibido: <<%s>>\n", recv_buffer);
         fprintf(fp_output, "%s", recv_buffer);
     }
 
     /* Cerramos los archivos al salir */
-    if (fclose(fp_input)) fail("ERROR: No se pudo cerrar el archivo de lectura");
-    if (fclose(fp_output)) fail("ERROR: No se pudo cerrar el archivo de escritura");
-    if (send_buffer) free(send_buffer);
+
+    if (fclose(fp_input)) {
+        fail("ERROR: No se pudo cerrar el archivo de lectura");
+    }
+
+    if (fclose(fp_output)) {
+        fail("ERROR: No se pudo cerrar el archivo de escritura");
+    }
+
+    if (send_buffer) {
+        free(send_buffer);
+    }
 
     return;
 }
-
 
 
 static void print_help(char *exe_name) {
@@ -266,8 +323,8 @@ static void print_help(char *exe_name) {
 }
 
 
-static uint16_t getPortOrFail(char *argv[], int pos) {
-    uint16_t read_number = atoi(argv[pos]);
+static uint16_t getPortOrFail(char **argv, int pos) {
+    long read_number = atol(argv[pos]);
 
     if (read_number <= 0 || read_number > 65535) {
         fprintf(stderr, "ERROR: El valor de puerto especificado (%s) no es válido\n", argv[pos]);
@@ -279,7 +336,7 @@ static uint16_t getPortOrFail(char *argv[], int pos) {
 }
 
 
-static void process_args(struct Arguments *args, int argc, char** argv) {
+static void process_args(struct Arguments *args, int argc, char **argv) {
     char *current_arg_str;
 
     /* Flags para saber si se setearon el fichero a convertir, el puerto local y la IP y puerto remotos */
@@ -295,26 +352,19 @@ static void process_args(struct Arguments *args, int argc, char** argv) {
         if (current_arg_str[0] == OPT_OPTION_FLAG) { /* Flag de opción */
             /* Manejar las opciones largas */
             if (current_arg_str[1] == OPT_OPTION_FLAG) {
-                if (strcmp(current_arg_str, "--file"))
-                {
+                if (strcmp(current_arg_str, "--file")) {
                     current_arg_str = "-f";
-                } else if (!strcmp(current_arg_str, "--origen"))
-                {
+                } else if (!strcmp(current_arg_str, "--origen")) {
                     current_arg_str = "-o";
-                } else if (strcmp(current_arg_str, "--ip"))
-                {
+                } else if (strcmp(current_arg_str, "--ip")) {
                     current_arg_str = "-i";
-                } else if (!strcmp(current_arg_str, "--puerto"))
-                {
+                } else if (!strcmp(current_arg_str, "--puerto")) {
                     current_arg_str = "-p";
-                } else if (!strcmp(current_arg_str, "--log"))
-                {
+                } else if (!strcmp(current_arg_str, "--log")) {
                     current_arg_str = "-l";
-                } else if (!strcmp(current_arg_str, "--no-log"))
-                {
+                } else if (!strcmp(current_arg_str, "--no-log")) {
                     current_arg_str = "-n";
-                } else if (!strcmp(current_arg_str, "--help"))
-                {
+                } else if (!strcmp(current_arg_str, "--help")) {
                     current_arg_str = "-h";
                 }
             }

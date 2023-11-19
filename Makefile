@@ -13,7 +13,7 @@ HEADERS_DIR = host
 INCLUDES = -I$(HEADERS_DIR)
 
 # Archivos de cabecera para generar dependencias
-HEADERS = $(HEADERS_DIR)/host.h $(HEADERS_DIR)/getip.h $(HEADERS_DIR)/loging.h
+HEADERS = $(HEADERS_DIR)/host.h $(HEADERS_DIR)/getlocalips.h $(HEADERS_DIR)/getpublicip.h $(HEADERS_DIR)/loging.h
 
 # Fuentes con las funcionalidades básicas de cliente y servidor (implementaciones de los .h)
 COMMON = $(HEADERS:.h=.c)
